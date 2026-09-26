@@ -20,6 +20,38 @@ jobs:
     timeout-minutes: 180
 
     steps:
+      - name: Free runner disk space
+        # Hosted ubuntu-24.04 images ship ~60 GB of preinstalled toolchains
+        # (Android SDK, .NET, GHC, CodeQL, ...) and leave only ~10 GB free.
+        # live-build's chroot + binary rootfs + squashfs peak above 20 GB,
+        # so drop everything this build cannot possibly use before checkout.
+        run: |
+          set -euxo pipefail
+          for d in \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /usr/share/dotnet \
+            /usr/share/swift \
+            /usr/local/.ghcup \
+            /usr/local/rustup \
+            /usr/local/cargo \
+            /usr/local/go \
+            /usr/local/share/boost \
+            /usr/local/share/vcpkg \
+            /usr/local/share/powershell \
+            /usr/local/graalvm \
+            /usr/local/rvm \
+            /usr/share/miniconda \
+            /opt/microsoft \
+            /opt/az \
+            /opt/hostedtoolcache \
+            /snap
+          do
+            sudo rm -rf "$d" 2>/dev/null || true
+          done
+          sudo apt-get clean || true
+          df -h /
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -85,6 +117,10 @@ jobs:
           test -f artifacts/packages/SHA256SUMS
           ( cd artifacts/packages && sha256sum -c SHA256SUMS )
           bash scripts/validate-winduxedu-component-packages.sh
+          # The workspace artifacts are staged next; the pulled toolchain
+          # images (golang/rust bookworm, several GB) are no longer needed.
+          docker image prune -af || true
+          df -h /
 
       - name: Stage verified WinduxEdu 1.0 packages and hooks
         run: |
@@ -93,6 +129,10 @@ jobs:
             bash scripts/stage-winduxedu-live-inputs.sh
           ls -lh config/includes.chroot/opt/winduxedu/packages
           find config/hooks -maxdepth 1 -name '*.chroot' -type f -printf '%f\n' | sort
+          # The proprietary source parts are only inputs to this staging step;
+          # freeing ~1.7 GB gives the chroot/squashfs phases enough headroom.
+          sudo rm -rf edu-software
+          df -h /
 
       - name: Configure WinduxEdu live-build image
         run: |
