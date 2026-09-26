@@ -27,7 +27,9 @@ Xft.rgba: rgb
 XTerm*utf8: true
 XTerm*locale: true
 XTerm*renderFont: true
-XTerm*faceName: DejaVu Sans Mono
+! xterm #328+ explicit comma fallback chain: fontconfig sort order alone
+! never reaches Noto CJK for a DejaVu pattern, so Chinese rendered as boxes.
+XTerm*faceName: DejaVu Sans Mono,Noto Sans CJK SC
 XTerm*faceSize: 11
 ! Keep East Asian ambiguous-width punctuation single-column.  Real CJK
 ! ideographs remain double-width while ASCII character cells stay compact.
@@ -38,7 +40,7 @@ XTerm*saveLines: 5000
 XTerm*background: #000000
 XTerm*foreground: #f2f2f2
 XTerm*cursorColor: #ffffff
-xterm*faceName: DejaVu Sans Mono
+xterm*faceName: DejaVu Sans Mono,Noto Sans CJK SC
 xterm*faceSize: 11
 xterm*cjkWidth: false
 xterm*background: #000000
