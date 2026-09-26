@@ -2,7 +2,7 @@
 
 **WinduxEdu 1.0** 是由 **SYSTEM-Intel-MIC** 维护的 Debian Bookworm AMD64 Live 教育发行版集成层。它以 **ElevenDE 3.5.1** 为核心 X11 桌面，提供 Windows 风格的开始菜单、任务栏、统一标题栏、资源管理器、设置、任务管理器、运行对话框、中文输入、Calamares 安装器和一组受控集成的 Windows 风格工具，并面向课堂教学内置**开源教育软件**与**按声明收录的专有教学软件**。
 
-> `main` 为唯一主干。推送到 `main`（或手动触发）即运行 GitHub Actions：组件包构建 → ISO 组装 → squashfs/QEMU 校验，全部通过后自动创建 **Preview Release**（预发布）并附带 ISO 与 SHA-256。
+> `main` 为唯一主干。推送到 `main`（或手动触发）即运行 GitHub Actions：组件包构建 → ISO 组装 → squashfs/QEMU 校验，全部通过后自动创建 **Preview Release**（预发布）并附带 ISO（超过 2 GiB 时自动切分为分卷资产）与 SHA-256 校验文件。
 
 ## 发行版集成架构
 
@@ -16,7 +16,7 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 | **补丁层** | `packages/elevende/patches/` 与受审计补丁脚本 | 对构建副本应用显示重排、桌面入口、会话策略和图标解析改造。 | 不修改或推送 ElevenDE 上游仓库。 |
 | **桌面集成层** | `config/includes.chroot/`、`config/hooks/normal/` | 统一 ElevenDE 会话变量、标题栏、启动入口、Windows 11 图标和 GTK 控件主题。 | 不替代第三方工具的业务逻辑。 |
 | **Live 输入层** | `scripts/stage-winduxedu-live-inputs.sh` | 只向 Live chroot 放入已校验 DEB、SHA256、清单和执行钩子。 | 不重新下载组件。 |
-| **教育组件层** | `config/package-lists/winduxedu-education.list.chroot`、`edu-software/` | 开源教育组件经 Debian Bookworm 官方源固定版本安装；专有教学软件按声明分卷收录。 | 不修改收录文件，不更换其版本。 |
+| **教育组件层** | `config/package-lists/winduxedu-education.list.chroot`、`edu-software/` | 开源教育组件经 Debian Bookworm 官方源固定版本安装；专有教学软件按声明分卷收录，CI 双层校验重组后安装进 Live 镜像。 | 不修改收录文件，不更换其版本。 |
 
 这种结构将上游更新、WinduxEdu 适配、包构建和 ISO 组装明确分离。`WINDUXEDU-1.0-BUILD-MANIFEST.json` 同时记录 WinduxEdu 提交、包哈希、来源锁、二进制锁、ElevenDE 图标映射及每个覆盖图标的 SHA-256，便于复核最终 ISO 的输入。
 
@@ -40,6 +40,7 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 - **与 SYSTEM-Intel-MIC 无关**：本组织非开发者、非分发维护者、不拥有其商标、不提供任何保证；
 - **仅作收录、版本不更换**：`Package`/`Version`/SHA-256 固定于 `edu-software/DEB-INVENTORY.tsv`；
 - 为遵守 GitHub 单文件 100 MB 上限，每个 DEB 以 **50 MiB 分卷**存放（`PARTS-INDEX.tsv` 逐卷哈希，`scripts/assemble-edu-debs.py` 重组并双层校验）。
+- **进入 Live 镜像**：CI 在 staging 阶段用 `scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages` 重组并校验，`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 以 `apt-get install -y --no-install-recommends` 逐个安装进 chroot（安装后删除暂存目录，不进 squashfs）。**希沃管家（com.seewo.terminalmanager）被有意排除**：其硬依赖 `libstdc++6 (<< 9)` 在 Bookworm（12.x）上永远无法满足；其余 7 个包由 `scripts/validate-winduxedu-live-image.sh` 在最终 squashfs 的 dpkg status 中逐一断言。`libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；`--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网抓取字体。希沃/钉钉/微信/QQ 等入口若只自带 `/opt/apps/...` 桌面文件，安装钩子会补拷到 `/usr/share/applications/` 保证菜单可见。
 
 声明全文见 [`edu-software/README.md`](edu-software/README.md)。
 
@@ -106,16 +107,40 @@ cd winduxedu
 bash scripts/local-test.sh
 ```
 
-构建顺序为：来源锁与缓存 → 核心/附加 DEB → SHA-256 与包元数据校验 → 构建清单 → Live staging → Bookworm ISO → BIOS/UEFI 重打包 → squashfs 内容校验 → QEMU BIOS/UEFI 冒烟。`scripts/validate-winduxedu-live-image.sh` 必须确认 Calamares 后安装模块、最小 Live sudoers、无 LightDM、原生 ElevenDE 服务、13 个图标别名、受限 polkit 调度器、无系统命令桌面入口、WinduxEdu Store 和关键组件入口均在最终 squashfs 中。
+构建顺序为：来源锁与缓存 → 核心/附加 DEB → SHA-256 与包元数据校验 → 构建清单 → Live staging → Bookworm ISO → BIOS/UEFI 重打包 → squashfs 内容校验 → QEMU BIOS/UEFI 冒烟。`scripts/validate-winduxedu-live-image.sh` 必须确认 Calamares 后安装模块、最小 Live sudoers、无 LightDM、原生 ElevenDE 服务、13 个图标别名、受限 polkit 调度器、无系统命令桌面入口、WinduxEdu Store、关键组件入口，以及 7 个专有教学软件（希沃管家除外）均已安装在最终 squashfs 中。
 
 GitHub Actions（[`.github/workflows/build.yml`](.github/workflows/build.yml)）在 `main` 与 `winduxedu-1.0-integration` 推送时运行：
 
 1. 在两个固定 Bookworm 容器中构建组件 DEB 并校验；
-2. 组装 Live 输入并执行 `lb build`、双启动重打包；
+2. 组装 Live 输入（含重组校验 `edu-software/` 专有 DEB 至 chroot 树）并执行 `lb build`、双启动重打包；
 3. 解出 squashfs 验证关键结构，运行 `validate-winduxedu-live-image.sh`；
 4. QEMU BIOS/UEFI 有界启动冒烟并截取画面；
 5. 上传 ISO、ISO SHA-256、启动报告、构建日志、组件包集和 manifest 为 Artifacts；
-6. 全部检查通过后创建 **Preview Release**（预发布），因此每次成功的构建都会产出可供下载的预发布版本。
+6. 全部检查通过后创建 **Preview Release**（预发布），因此每次成功的构建都会产出可供下载的预发布版本；ISO 超过 GitHub 单资产 2 GiB 上限时自动切分为 `.001`/`.002` 分卷。
+
+### 下载、拼接与安装（Release 资产说明）
+
+**为什么可能是分卷而不是单个 ISO。** GitHub Release 对**单个上传资产**强制 2 GiB（2 147 483 648 字节）硬上限，而 Release 的总容量与下载带宽没有限制。集成专有教学软件后镜像体积超过该上限，因此 CI 在 ISO 超过 2 GiB 时自动按 **1900 MiB 裸字节切卷**为 `WinduxEdu-1.0-amd64-livecd.iso.001`、`.002` … 上传——切卷不压缩、不打包，只是顺序分割原始字节；未超过上限时仍上传单个 ISO。
+
+**校验**（在下载目录执行）：
+
+```sh
+# 切卷时提供：逐卷校验
+sha256sum -c WinduxEdu-1.0-amd64-livecd.iso.parts.sha256
+
+# 拼接出完整 ISO 后：整卷校验（始终提供）
+sha256sum -c WinduxEdu-1.0-amd64-livecd.iso.sha256
+```
+
+**拼接成完整 ISO**（三选一）：
+
+| 方式 | 操作 |
+| --- | --- |
+| Windows 命令行 | `copy /b WinduxEdu-1.0-amd64-livecd.iso.001+WinduxEdu-1.0-amd64-livecd.iso.002 WinduxEdu-1.0-amd64-livecd.iso` |
+| Linux / macOS | `cat WinduxEdu-1.0-amd64-livecd.iso.001 WinduxEdu-1.0-amd64-livecd.iso.002 > WinduxEdu-1.0-amd64-livecd.iso` |
+| 7-Zip / WinRAR | 直接打开 `.001` 分卷并解出完整 `WinduxEdu-1.0-amd64-livecd.iso`（解压即拼接） |
+
+**写盘与安装**：拼接并通过校验后的完整 ISO 用 **Rufus**（Windows）或 **Etcher** 写入 U 盘——Rufus/Etcher 只接受拼好的完整 ISO，不能直接写 `.001` 分卷。U 盘启动后可先在 Live 桌面体验，再运行「安装 WinduxEdu」用 Calamares 安装到硬盘；BIOS 与 UEFI 均可启动。
 
 ## 许可证与安全边界
 

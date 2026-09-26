@@ -1,0 +1,47 @@
+#!/bin/sh
+set -eu
+
+EDU_DIR=/opt/winduxedu/edu-packages
+if [ ! -d "$EDU_DIR" ] || ! ls "$EDU_DIR"/*.deb >/dev/null 2>&1; then
+    echo "WinduxEdu edu-software packages are missing: $EDU_DIR" >&2
+    exit 1
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+
+installed=0
+skipped=0
+for deb in "$EDU_DIR"/*.deb; do
+    case "$(basename "$deb")" in
+        *管家*|*terminalmanager*)
+            # 希沃管家 hard-depends on libstdc++6 (<< 9); Debian Bookworm ships
+            # 12.x, so apt can never satisfy it and would abort the whole
+            # transaction.  Skip it; every other collected package must install.
+            echo "skip unsatisfiable package: $(basename "$deb")" >&2
+            skipped=$((skipped + 1))
+            continue
+            ;;
+    esac
+    # --no-install-recommends keeps ONLYOFFICE's ttf-mscorefonts-installer
+    # (which downloads fonts at install time) out of the build.
+    apt-get install -y --no-install-recommends "$deb"
+    installed=$((installed + 1))
+done
+
+if [ "$installed" -ne 7 ] || [ "$skipped" -ne 1 ]; then
+    echo "edu-software install expected 7 installed + 1 skipped, got $installed + $skipped" >&2
+    exit 1
+fi
+
+# Vendor packages that only ship menu entries under /opt/apps/... would stay
+# invisible to the desktop menu; export every application entry that has no
+# /usr/share/applications counterpart yet.
+for desktop in /opt/apps/*/entries/applications/*.desktop; do
+    [ -f "$desktop" ] || continue
+    target="/usr/share/applications/$(basename "$desktop")"
+    [ -e "$target" ] || install -m 0644 "$desktop" "$target"
+done
+
+# The staged DEBs are build-time inputs only; drop them before the squashfs.
+rm -rf "$EDU_DIR"

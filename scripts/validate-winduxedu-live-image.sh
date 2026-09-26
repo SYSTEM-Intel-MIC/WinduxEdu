@@ -276,6 +276,32 @@ grep -q '^XTerm\*faceName: DejaVu Sans Mono,Noto Sans CJK SC$' "$XTERM_RESOURCES
 grep -q '^XTerm\*cjkWidth: false$' "$XTERM_RESOURCES"
 grep -q '^XTerm\*background: #000000$' "$XTERM_RESOURCES"
 
+# The collected proprietary teaching applications must be installed.  希沃管家
+# (com.seewo.terminalmanager) is intentionally excluded: its libstdc++6 (<< 9)
+# dependency is unsatisfiable on Bookworm and hook 1550 skips it.
+DPKG_STATUS="$FULL_ROOT/var/lib/dpkg/status"
+for edu_package in \
+    onlyoffice-desktopeditors \
+    com.seewo.easinote5 \
+    com.seewo.easicare \
+    com.seewo.easicamera \
+    linuxqq \
+    wechat \
+    com.alibabainc.dingtalk; do
+    grep -qx "Package: $edu_package" "$DPKG_STATUS" || {
+        echo "proprietary teaching application missing from dpkg status: $edu_package" >&2
+        exit 1
+    }
+done
+if grep -qx 'Package: com.seewo.terminalmanager' "$DPKG_STATUS"; then
+    echo 'unsatisfiable Seewo Terminal Manager must not be installed' >&2
+    exit 1
+fi
+# Menu visibility: Seewo whiteboard entries only ship under /opt/apps/..., so
+# the install hook must have exported a /usr/share/applications counterpart.
+require_path 'usr/share/applications/com.seewo.easinote5.desktop'
+require_path 'usr/share/applications/com.alibabainc.dingtalk.desktop'
+
 # All Apps must not surface session/power helpers as regular applications.  This
 # validates the fully installed filesystem rather than trusting the source hook.
 for desktop_file in "$FULL_ROOT"/usr/share/applications/*.desktop "$FULL_ROOT"/usr/local/share/applications/*.desktop; do

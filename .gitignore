@@ -10,6 +10,7 @@ cache/
 # locally generated component output
 artifacts/
 config/includes.chroot/opt/winduxedu/packages/
+config/includes.chroot/opt/winduxedu/edu-packages/
 
 # editor and OS state
 .DS_Store

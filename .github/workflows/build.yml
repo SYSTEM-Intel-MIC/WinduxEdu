@@ -128,6 +128,14 @@ jobs:
             bash scripts/stage-winduxedu-live-inputs.sh
           ls -lh config/includes.chroot/opt/winduxedu/packages
           find config/hooks -maxdepth 1 -name '*.chroot' -type f -printf '%f\n' | sort
+          # Reassemble and double-verify the collected proprietary teaching
+          # DEBs into the chroot tree.  Chroot hook 1550 installs them and
+          # deletes the staged copies before the squashfs is produced.
+          python3 scripts/assemble-edu-debs.py \
+            --output config/includes.chroot/opt/winduxedu/edu-packages
+          test "$(find config/includes.chroot/opt/winduxedu/edu-packages \
+            -maxdepth 1 -name '*.deb' -type f | wc -l)" -eq 8
+          ls -lh config/includes.chroot/opt/winduxedu/edu-packages
           # The proprietary source parts are only inputs to this staging step;
           # freeing ~1.7 GB gives the chroot/squashfs phases enough headroom.
           sudo rm -rf edu-software
@@ -254,6 +262,50 @@ jobs:
           chmod 755 scripts/validate-winduxedu-live-image.sh
           sudo bash scripts/validate-winduxedu-live-image.sh "$ISO"
           sha256sum "$ISO" | tee WinduxEdu-1.0-amd64-livecd.iso.sha256
+          # GitHub caps a single Release asset at 2 GiB while total Release
+          # size stays unlimited.  Once the integrated teaching apps push the
+          # ISO past the cap, publish it as raw byte-split volumes (joinable
+          # with 7-Zip, `copy /b` or `cat`); below the cap upload one file.
+          SPLIT_NOTE=""
+          ISO_BYTES="$(stat -c %s "$ISO")"
+          if [ "$ISO_BYTES" -ge 2147483648 ]; then
+            split -b 1900M --numeric-suffixes=1 --suffix-length=3 "$ISO" "${ISO}."
+            sha256sum "${ISO}".??? > WinduxEdu-1.0-amd64-livecd.iso.parts.sha256
+            ls -lh "${ISO}".??? WinduxEdu-1.0-amd64-livecd.iso.parts.sha256
+            SPLIT_NOTE="$(cat <<'NOTE'
+          ## Split ISO volumes (why + how to join)
+
+          This ISO exceeds GitHub's 2 GiB single-asset limit, so it is published
+          as raw byte-split volumes: sequential bytes of one ISO, no packing or
+          compression step.
+
+          - Windows: `copy /b WinduxEdu-1.0-amd64-livecd.iso.001+WinduxEdu-1.0-amd64-livecd.iso.002 WinduxEdu-1.0-amd64-livecd.iso`
+          - Linux/macOS: `cat WinduxEdu-1.0-amd64-livecd.iso.001 WinduxEdu-1.0-amd64-livecd.iso.002 > WinduxEdu-1.0-amd64-livecd.iso`
+          - 7-Zip / WinRAR: open the `.001` volume and extract the full ISO directly.
+
+          Verify the volumes, join them, then verify the joined ISO before
+          writing it to USB with Rufus/Etcher:
+
+          ```sh
+          sha256sum -c WinduxEdu-1.0-amd64-livecd.iso.parts.sha256
+          sha256sum -c WinduxEdu-1.0-amd64-livecd.iso.sha256
+          ```
+
+          README section "下载、拼接与安装（Release 资产说明）" has the full guide.
+          NOTE
+          )"
+          fi
+          # Build the release asset list only from files that exist so the
+          # release action never sees an unmatched glob.
+          {
+            echo "release_files<<RELEASE_FILES_EOF"
+            printf '%s\n' "$ISO" 'WinduxEdu-1.0-amd64-livecd.iso.sha256'
+            if [ -f WinduxEdu-1.0-amd64-livecd.iso.parts.sha256 ]; then
+              printf '%s\n' "${ISO}".??? 'WinduxEdu-1.0-amd64-livecd.iso.parts.sha256'
+            fi
+            printf '%s\n' 'WinduxEdu-1.0-release-notes.md'
+            echo "RELEASE_FILES_EOF"
+          } >> "$GITHUB_OUTPUT"
           cat > WinduxEdu-1.0-release-notes.md <<EOF
           # WinduxEdu 1.0 Preview — LiveCD with installer
 
@@ -263,15 +315,19 @@ jobs:
           This hybrid ISO includes the ElevenDE desktop, WinduxEdu boot and installer branding,
           Chinese Fcitx5 input support, Microsoft Edge, VLC, Image Viewer, PeaZip, WinduxEdu Store,
           the Matchbox touch keyboard from the Debian Bookworm archive,
-          the maximum-compatibility firmware/driver set, and Windows-style system tools built
-          from the locked package layer. Collected proprietary teaching apps are documented in
-          edu-software/ and are not part of the ISO build yet.
+          the maximum-compatibility firmware/driver set, Windows-style system tools built
+          from the locked package layer, and the collected proprietary teaching applications
+          installed from edu-software/: ONLYOFFICE, DingTalk, QQ, WeChat, Seewo EasiNote,
+          EasiCare and EasiCamera. Seewo Terminal Manager (希沃管家) is excluded because its
+          libstdc++6 (<< 9) dependency cannot be satisfied on Debian Bookworm.
 
           Verify the ISO before writing it to USB:
 
           \`\`\`sh
           sha256sum -c WinduxEdu-1.0-amd64-livecd.iso.sha256
           \`\`\`
+
+          ${SPLIT_NOTE}
           EOF
           ls -lh "$ISO" WinduxEdu-1.0-amd64-livecd.iso.sha256 WinduxEdu-1.0-release-notes.md build.log
 
@@ -343,10 +399,7 @@ jobs:
           name: WinduxEdu 1.0 Preview Build ${{ github.run_number }}
           body_path: WinduxEdu-1.0-release-notes.md
           prerelease: true
-          files: |
-            ${{ steps.iso.outputs.iso_path }}
-            WinduxEdu-1.0-amd64-livecd.iso.sha256
-            WinduxEdu-1.0-release-notes.md
+          files: ${{ steps.iso.outputs.release_files }}
 
       - name: Cleanup runner disk
         if: always()

@@ -55,6 +55,10 @@ bash scripts/validate-winduxedu-component-packages.sh
 
 echo "==> Staging verified packages and chroot hooks"
 sudo ROOT="$ROOT" PKGS="$ROOT/artifacts/packages" bash scripts/stage-winduxedu-live-inputs.sh
+# Reassemble the collected proprietary teaching DEBs into the chroot tree so
+# hook 1550 can install them (CI does the same before freeing edu-software/).
+python3 scripts/assemble-edu-debs.py \
+    --output config/includes.chroot/opt/winduxedu/edu-packages
 
 # Remove only generated live-build output; source configuration remains intact.
 sudo rm -rf lb .build stage cache auto chroot binary binary.tmp *.iso build.log 2>/dev/null || true
