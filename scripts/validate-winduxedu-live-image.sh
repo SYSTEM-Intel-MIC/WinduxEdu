@@ -227,11 +227,20 @@ fi
 # the ElevenDE icon theme.  Checking the final squashfs catches both package
 # staging omissions and upstream icon-generation overwrites.
 for icon in \
-    linux-pcmanager linux-regedit winduxedu-device-manager \ \
-    microsoft-edge winduxedu-store copilot-for-linux peazip \ \
-    winduxedu-troubleshooting \ \
-    winduxedu-sticky-keys winduxedu-widgets winduxedu-windowshit \
-    winduxedu-winsat winduxedu-winver feedbackhub; do
+    linux-pcmanager \
+    linux-regedit \
+    winduxedu-device-manager \
+    microsoft-edge \
+    winduxedu-store \
+    copilot-for-linux \
+    peazip \
+    winduxedu-troubleshooting \
+    winduxedu-sticky-keys \
+    winduxedu-widgets \
+    winduxedu-windowshit \
+    winduxedu-winsat \
+    winduxedu-winver \
+    feedbackhub; do
     require_path "usr/local/share/elevende-shell/icons/64x64/apps/${icon}.png"
 done
 

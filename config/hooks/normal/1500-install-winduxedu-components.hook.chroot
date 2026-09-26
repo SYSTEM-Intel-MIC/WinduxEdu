@@ -58,8 +58,13 @@ install -d /usr/local/share/applications
 # ElevenDE does not read Icon= from desktop files on the desktop surface.  Copy
 # the official icon installed by the locked Microsoft Edge DEB into the same
 # native theme namespace used by the shell, preserving the microsoft-edge name.
+# Edge 143+ no longer ships /usr/share/icons/hicolor entries at all; its logos
+# live in /opt/microsoft/msedge/product_logo_<size>.png, so fall back to those.
 for size in 16 22 24 32 48 64 96 128; do
     edge_icon="/usr/share/icons/hicolor/${size}x${size}/apps/microsoft-edge.png"
+    if [ ! -f "$edge_icon" ]; then
+        edge_icon="/opt/microsoft/msedge/product_logo_${size}.png"
+    fi
     if [ -f "$edge_icon" ]; then
         install -Dm644 "$edge_icon" \
             "/usr/local/share/elevende-shell/icons/${size}x${size}/apps/microsoft-edge.png"
