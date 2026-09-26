@@ -1,0 +1,34 @@
+---
+componentName: winduxedu
+welcomeStyleCalamares: false
+welcomeExpandingLogo: true
+windowExpanding: normal
+windowSize: 1024px,650px
+windowPlacement: center
+sidebar: widget
+navigation: widget
+
+strings:
+    productName: WinduxEdu
+    shortProductName: WinduxEdu
+    version: "1.0"
+    shortVersion: "1.0"
+    versionedName: WinduxEdu 1.0
+    shortVersionedName: WinduxEdu 1.0
+    bootloaderEntryName: WinduxEdu
+    productUrl: https://github.com/SYSTEM-Intel-MIC/WinduxEdu
+    supportUrl: https://github.com/SYSTEM-Intel-MIC/WinduxEdu/issues
+    knownIssuesUrl: https://github.com/SYSTEM-Intel-MIC/WinduxEdu/issues
+    releaseNotesUrl: https://github.com/SYSTEM-Intel-MIC/WinduxEdu/releases
+
+images:
+    productIcon: "winduxedu-mark.svg"
+    productLogo: "winduxedu-mark.svg"
+    productWallpaper: "winduxedu-aurora-wallpaper.png"
+    productWelcome: "winduxedu-mark.svg"
+
+style:
+    sidebarBackground: "#082353"
+    sidebarText: "#EAF6FF"
+    sidebarTextSelect: "#07162F"
+    sidebarTextHighlight: "#75D6FF"

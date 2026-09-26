@@ -1,0 +1,50 @@
+/* WinduxEdu desktop integration layer: third-party GTK control normalization. */
+@define-color winduxedu_surface #f7f8fb;
+@define-color winduxedu_surface_alt #ffffff;
+@define-color winduxedu_text #1b1b1f;
+@define-color winduxedu_border #d9dce4;
+@define-color winduxedu_accent #0067c0;
+@define-color winduxedu_accent_hover #005fb0;
+
+window, dialog, .background {
+  background-color: @winduxedu_surface;
+  color: @winduxedu_text;
+}
+button, entry, combobox button, textview, treeview.view, list, .view {
+  border-radius: 6px;
+  border: 1px solid @winduxedu_border;
+  background-color: @winduxedu_surface_alt;
+  color: @winduxedu_text;
+}
+button {
+  padding: 6px 12px;
+  transition: 120ms ease-out;
+}
+button:hover {
+  background-color: #eef4fc;
+  border-color: #a9c9ec;
+}
+button:active, button.suggested-action {
+  background-color: @winduxedu_accent;
+  border-color: @winduxedu_accent;
+  color: white;
+}
+entry:focus, textview:focus, treeview.view:focus {
+  border-color: @winduxedu_accent;
+  box-shadow: 0 0 0 1px @winduxedu_accent;
+}
+progressbar trough {
+  min-height: 5px;
+  border-radius: 99px;
+  background-color: #dde3ec;
+}
+progressbar progress {
+  min-height: 5px;
+  border-radius: 99px;
+  background-color: @winduxedu_accent;
+}
+headerbar {
+  background-color: @winduxedu_surface_alt;
+  border-bottom: 1px solid @winduxedu_border;
+  box-shadow: none;
+}

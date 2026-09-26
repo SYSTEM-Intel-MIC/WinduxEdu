@@ -1,0 +1,22 @@
+#!/bin/sh
+# Fixed-function privileged dispatcher for WinduxEdu desktop actions.
+# It deliberately accepts no command paths, no shell fragments and no extra
+# arguments.  PolicyKit authorizes this one program; every branch remains
+# explicitly allow-listed.
+set -eu
+
+[ "$#" -eq 1 ] || exit 64
+case "$1" in
+    suspend)
+        exec /usr/bin/systemctl --no-wall suspend
+        ;;
+    poweroff)
+        exec /usr/bin/systemctl --no-wall poweroff
+        ;;
+    reboot)
+        exec /usr/bin/systemctl --no-wall reboot
+        ;;
+    *)
+        exit 64
+        ;;
+esac

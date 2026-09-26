@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+# The disposable Live user is created only at boot by
+# winduxedu-live-session-init.service. Do not bake it into /etc/passwd and do not
+# give it a password: the native ElevenDE display service starts it directly.
+install -d -m 0755 /etc/winduxedu
+printf '%s\n' user > /etc/winduxedu/session-user
+
+# ElevenDE owns the only graphical session path. The two services are enabled
+# explicitly because live-build does not always preserve preset state. LightDM
+# must not be present or reintroduced as a competing greeter.
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable lightdm.service >/dev/null 2>&1 || true
+    systemctl enable winduxedu-live-session-init.service >/dev/null 2>&1 || true
+    systemctl enable winduxedu-elevende-display.service >/dev/null 2>&1 || true
+fi
+
+# live-build can install the generic live-config systemd backend independently
+# of the explicit package list. Its oneshot service runs Before=basic.target,
+# yet WinduxEdu initializes its Live user and graphical session through the two
+# native services above. Mask it in the finished Live root so it cannot block
+# the graphical target during DHCP, locale or generic profile processing.
+install -d -m 0755 /etc/systemd/system
+ln -sfn /dev/null /etc/systemd/system/live-config.service
+if [ -e /etc/init.d/lightdm ] || [ -e /usr/sbin/lightdm ]; then
+    echo 'WinduxEdu: LightDM is not permitted; use winduxedu-elevende-display.service' >&2
+    exit 1
+fi

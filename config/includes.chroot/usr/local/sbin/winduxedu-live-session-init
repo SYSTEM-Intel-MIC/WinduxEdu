@@ -1,0 +1,28 @@
+#!/bin/sh
+# Prepare only the disposable Live user. The ElevenDE native display service
+# owns Xorg/session startup; this script never invokes a display manager.
+set -eu
+
+[ -d /run/live ] || exit 0
+if ! id user >/dev/null 2>&1; then
+    useradd --create-home --shell /bin/bash --user-group user
+fi
+# The Live user is not an interactive Linux login account. The graphical Live
+# session is started by root through runuser, so no documented password, PAM
+# autologin group or LightDM policy is required.
+passwd --lock user >/dev/null 2>&1 || true
+for group in audio video plugdev netdev render input; do
+    if getent group "$group" >/dev/null 2>&1; then
+        usermod --append --groups "$group" user
+    fi
+done
+if [ -d /etc/skel ]; then
+    cp -a /etc/skel/. /home/user/ 2>/dev/null || true
+fi
+# Widgets are started exactly once from /etc/xdg/autostart.  Old releases may
+# have left an upstream user-level copy that starts a second process and makes
+# its edge hot zone repeatedly open during resolution changes.
+rm -f /home/user/.config/autostart/widget-panel.desktop
+install -d -m 0755 /etc/winduxedu
+printf '%s\n' user > /etc/winduxedu/session-user
+chown -R user:user /home/user

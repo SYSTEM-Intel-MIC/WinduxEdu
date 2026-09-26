@@ -1,0 +1,11 @@
+PRETTY_NAME="WinduxEdu 1.0 (Bookworm)"
+NAME="WinduxEdu"
+VERSION_ID="1.0"
+VERSION="1.0 (Bookworm)"
+VERSION_CODENAME=bookworm
+ID=winduxedu
+ID_LIKE=debian
+HOME_URL="https://github.com/SYSTEM-Intel-MIC/WinduxEdu"
+SUPPORT_URL="https://github.com/SYSTEM-Intel-MIC/WinduxEdu/issues"
+BUG_REPORT_URL="https://github.com/SYSTEM-Intel-MIC/WinduxEdu/issues"
+BUILD_ID="SYSTEM-Intel-MIC"

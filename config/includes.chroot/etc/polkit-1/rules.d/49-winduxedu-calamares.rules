@@ -1,0 +1,19 @@
+polkit.addRule(function(action, subject) {
+    // The Live session is disposable. Permit its dedicated user only for the
+    // fixed-function WinduxEdu dispatcher; never grant a blanket pkexec bypass.
+    if (subject.user == "user" &&
+        action.id == "im.system-intel-mic.winduxedu.privileged-action") {
+        return polkit.Result.YES;
+    }
+
+    // ElevenDE's native display service does not create a conventional active
+    // logind seat, so GUI-agent-based AUTH_SELF can fail silently after install.
+    // Permit only the Calamares-created sudo user to run this one fixed-function
+    // dispatcher.  The dispatcher has no arbitrary-command branch: it accepts
+    // exactly suspend, poweroff or reboot.
+    // All other actions and users retain the policy defaults (auth_admin).
+    if (subject.isInGroup("sudo") &&
+        action.id == "im.system-intel-mic.winduxedu.privileged-action") {
+        return polkit.Result.YES;
+    }
+});

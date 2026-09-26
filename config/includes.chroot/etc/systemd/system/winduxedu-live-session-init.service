@@ -1,0 +1,13 @@
+[Unit]
+Description=Initialize the WinduxEdu Live graphical session user
+Before=winduxedu-elevende-display.service
+After=local-fs.target systemd-tmpfiles-setup.service
+Wants=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/winduxedu-live-session-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

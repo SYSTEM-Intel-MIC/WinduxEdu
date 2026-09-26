@@ -1,0 +1,9 @@
+# classification	file	Package	Version	Architecture	Size	SHA256
+Onlyoffice	Onlyoffice/onlyoffice.deb	onlyoffice-desktopeditors	9.4.0-129	amd64	364644136	4271434e81be42b1559fd989d24bf6d413482f278dc6a5e328202a4fc1a18649
+Seewo	Seewo/希沃白板.deb	com.seewo.easinote5	5.2.2.4.13701	amd64	168907060	e76174883badf9e9184cfc852ec0467e8f6de88a9866ea8b4250349088ee7b1a
+Seewo	Seewo/希沃管家.deb	com.seewo.terminalmanager	3.0.6.716	amd64	256872964	b8e28ee4ca7eee36aac1c985d3c404b557640fd48059eeed7e7bb5fc76ec5e19
+Seewo	Seewo/班级优化大师.deb	com.seewo.easicare	2.1.0.3274	amd64	116630220	da681ba0462e821145965edae1f9938a50c9ceb5a766ae0559210d493509eaab
+Seewo	Seewo/视频展台.deb	com.seewo.easicamera	2.0.5.2580	amd64	139623704	0e77fe047087858e991b90a1100fa7bea40a5205f0dd13f5cc500b8380eb0891
+Tencent IM	Tencent IM/QQ.deb	linuxqq	3.2.34-53644	amd64	187185496	436c65e1dd28422e128a21cbddb5fe4e2e6c079d7f27fec2541e014d38cc336e
+Tencent IM	Tencent IM/WeChat.deb	wechat	4.1.13.23	amd64	231359624	b7d0f8d53e9f648bc2c77a6096a04100d008f2d9f0d3988a2a4859b5992aca0a
+dingding	dingding/com.alibabainc.dingtalk.deb	com.alibabainc.dingtalk	8.2.8.260818002	amd64	374323140	88dad607bbb7a72918399391c9d53aedfcfa3a6dab01f7d0659e62c1ca32678f

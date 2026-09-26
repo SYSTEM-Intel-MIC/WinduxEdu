@@ -1,0 +1,114 @@
+# WinduxEdu core: Debian Bookworm AMD64, minimal X11 and ElevenDE session
+# The Live user and graphical session are initialized by the WinduxEdu-native
+# services below, rather than by live-config (which blocks basic.target while
+# executing generic late-userspace profiles on every boot).
+live-boot
+systemd-sysv
+libpam-systemd
+linux-image-amd64
+firmware-linux
+firmware-iwlwifi
+firmware-atheros
+firmware-brcm80211
+firmware-realtek
+firmware-misc-nonfree
+firmware-amd-graphics
+firmware-intel-sound
+
+# X11 session, ElevenDE native display service and lightweight compositor/window manager
+xorg
+xinit
+xauth
+kbd
+x11-xserver-utils
+x11-utils
+openbox
+picom
+xss-lock
+xterm
+dbus-x11
+policykit-1
+lxqt-policykit
+sudo
+network-manager
+
+# ElevenDE and its declared runtime stack
+libx11-6
+libxft2
+libfontconfig1
+libpng16-16
+libxtst6
+libxi6
+libdbus-1-3
+libcrypt1
+libgtk-3-0
+libnotify4
+libnss3
+libxss1
+libsecret-1-0
+libatspi2.0-0
+libayatana-appindicator3-1
+xdg-utils
+libqt6widgets6
+libqt6gui6
+libqt6core6
+libqt6network6
+libqt6dbus6
+libgdk-pixbuf-2.0-0
+shared-mime-info
+adwaita-icon-theme
+hicolor-icon-theme
+librsvg2-common
+alsa-utils
+pulseaudio-utils
+
+# Chinese locale and Fcitx5 input method
+locales
+fonts-noto-cjk
+fonts-noto-color-emoji
+fcitx5
+fcitx5-config-qt
+fcitx5-frontend-gtk3
+fcitx5-frontend-qt5
+fcitx5-chinese-addons
+fcitx5-pinyin
+
+# Requested everyday applications
+# Microsoft Edge is installed from packages/binaries.lock.tsv.
+vlc
+eog
+calamares
+calamares-settings-debian
+squashfs-tools
+rsync
+udisks2
+libblockdev-part2
+libblockdev-fs2
+dosfstools
+ntfs-3g
+mtools
+parted
+grub-common
+grub-pc-bin
+grub-efi-amd64-bin
+syslinux-utils
+efibootmgr
+os-prober
+
+# Runtime dependencies of integrated system tools
+python3-gi
+python3-cairo
+python3-tk
+gir1.2-gtk-3.0
+python3-tk
+xdotool
+wmctrl
+libjson-glib-1.0-0
+libdrm2
+libsystemd0
+pciutils
+usbutils
+fwupd
+linux-headers-amd64
+procps
+man-db

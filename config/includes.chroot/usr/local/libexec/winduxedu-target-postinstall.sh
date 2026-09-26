@@ -1,0 +1,151 @@
+#!/bin/sh
+set -eu
+
+# This script runs inside the newly installed target through Calamares
+# shellprocess. It must be safe to run more than once.
+TARGET=/
+
+# The Live image starts a temporary `user` session directly. The installed
+# system must never preserve that identity or bypass authentication: ElevenDE's
+# own Win11-style login gate authenticates the Calamares-created account.
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable winduxedu-live-session-init.service >/dev/null 2>&1 || true
+fi
+rm -f /etc/systemd/system/winduxedu-live-session-init.service \
+      /etc/systemd/system/multi-user.target.wants/winduxedu-live-session-init.service \
+      /usr/local/sbin/winduxedu-live-session-init
+rm -rf /etc/lightdm /etc/systemd/system/lightdm.service.d
+rm -f /etc/xdg/autostart/winduxedu-desktop-trust.desktop
+# The Live account is created at boot and must never be selected should its
+# passwd entry happen to be visible while Calamares runs. Clear the image's
+# Live session file first, then require the account created by Calamares.
+rm -f /etc/winduxedu/session-user
+human_accounts=$(awk -F: '$3 >= 1000 && $3 < 60000 && $1 != "nobody" && $1 != "user" && $1 != "live" {print $1}' /etc/passwd)
+installed_account=$(printf '%s\n' "$human_accounts" | sed '/^$/d' | tail -n1)
+if [ -z "$installed_account" ]; then
+    echo 'WinduxEdu: Calamares did not create an installed session account' >&2
+    exit 1
+fi
+install -Dm644 /dev/stdin /etc/winduxedu/session-user <<EOF
+$installed_account
+EOF
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable winduxedu-installed-cleanup.service >/dev/null 2>&1 || true
+    systemctl enable winduxedu-elevende-display.service >/dev/null 2>&1 || true
+fi
+
+# Calamares executes this after the selected account exists.  Use the shared
+# installed-only cleaner so the system menu, inherited skeleton Desktop and
+# already-created user Desktop/XDG directories are handled as one operation.
+if [ -x /usr/local/libexec/winduxedu-installed-cleanup ]; then
+    /usr/local/libexec/winduxedu-installed-cleanup
+else
+    echo 'WinduxEdu: installed-only installer cleanup helper is missing' >&2
+    exit 1
+fi
+
+# Keep one Widgets process: WinduxEdu supplies the system XDG autostart entry.
+# Remove an upstream per-user copy which older media created after a settings
+# save and which then duplicated edge strips on every subsequent login.
+find /home /root /etc/skel -type f -path '*/.config/autostart/widget-panel.desktop' -delete 2>/dev/null || true
+
+# Keep the WinduxEdu GRUB theme self-contained in the installed target. Copy
+# both the theme and its relative desktop-image asset before running grub-mkconfig.
+THEME_SRC=/usr/share/winduxedu/branding/theme.txt
+[ -f "$THEME_SRC" ] || THEME_SRC=/boot/grub/themes/winduxedu/theme.txt
+WALL_SRC=/usr/share/winduxedu/branding/winduxedu-aurora-wallpaper.png
+[ -f "$WALL_SRC" ] || WALL_SRC=/boot/grub/themes/winduxedu/winduxedu-aurora-wallpaper.png
+if [ -f "$THEME_SRC" ] && [ -f "$WALL_SRC" ]; then
+    install -Dm644 "$THEME_SRC" /boot/grub/themes/winduxedu/theme.txt
+    install -Dm644 "$WALL_SRC" /boot/grub/themes/winduxedu/winduxedu-aurora-wallpaper.png
+    mkdir -p /etc/default/grub.d
+    cat > /etc/default/grub.d/00-winduxedu.cfg <<'EOF'
+GRUB_DISTRIBUTOR="WinduxEdu"
+GRUB_THEME="/boot/grub/themes/winduxedu/theme.txt"
+GRUB_TIMEOUT_STYLE=menu
+GRUB_TIMEOUT=6
+GRUB_DEFAULT=0
+GRUB_DISABLE_OS_PROBER=false
+EOF
+else
+    # Never leave a dangling GRUB_THEME which produces a boot-time error.
+    rm -f /etc/default/grub.d/00-winduxedu.cfg
+fi
+
+# Use ElevenDE's own lock program for installed sessions.  xss-lock observes
+# idle/DPMS state without requiring LightDM or a second locker implementation.
+if command -v xss-lock >/dev/null 2>&1 && [ -x /usr/local/bin/elevende-lock ]; then
+    install -Dm644 /dev/stdin /etc/xdg/autostart/winduxedu-lock.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=WinduxEdu Screen Lock
+Name[zh_CN]=WinduxEdu 锁屏
+Exec=sh -c 'xset s 600 600; xset +dpms; xset dpms 0 0 900; exec xss-lock --transfer-sleep-lock -- /usr/local/bin/elevende-lock --lock'
+OnlyShowIn=ElevenDE;Openbox;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+EOF
+fi
+
+# Ensure a display change is restored on the next login when saved by Settings.
+install -Dm755 /dev/stdin /usr/local/bin/winduxedu-restore-display <<'EOF'
+#!/bin/sh
+set -eu
+[ -n "${DISPLAY:-}" ] || exit 0
+[ -f "$HOME/.config/winduxedu/display.conf" ] || exit 0
+mode=$(sed -n '1p' "$HOME/.config/winduxedu/display.conf")
+[ -n "$mode" ] || exit 0
+output=$(xrandr 2>/dev/null | awk '/ connected/{print $1; exit}')
+[ -n "$output" ] || exit 0
+# The Shell handles root ConfigureNotify and polls root geometry itself.  Do
+# not signal it after RandR: elevende-shell intentionally has no SIGUSR1
+# handler, so the default signal action kills the desktop and leaves gray root.
+xrandr --output "$output" --mode "$mode" >/dev/null 2>&1 || true
+EOF
+install -Dm644 /dev/stdin /etc/xdg/autostart/winduxedu-restore-display.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=WinduxEdu Display Restore
+Exec=/usr/local/bin/winduxedu-restore-display
+OnlyShowIn=ElevenDE;LXDE;Openbox;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+EOF
+
+# Preserve the password entered in Calamares and make the created human user
+# eligible for sudo without changing or resetting its password.
+if getent group sudo >/dev/null 2>&1; then
+    if [ -n "$installed_account" ]; then
+        usermod -aG sudo "$installed_account" >/dev/null 2>&1 || true
+    fi
+fi
+
+# Refresh device state and initramfs so firmware already present in the target
+# is discovered without requiring a second manual driver step.
+command -v udevadm >/dev/null 2>&1 && udevadm trigger --action=add || true
+command -v depmod >/dev/null 2>&1 && depmod -a || true
+command -v update-initramfs >/dev/null 2>&1 && update-initramfs -u -k all || true
+
+# Regenerate GRUB only after the target theme and defaults are present.
+command -v update-grub >/dev/null 2>&1 && update-grub || true
+
+# Perform one more hardware/firmware probe at first boot, when the installed
+# kernel and target udev database are active. Optional firmware never blocks
+# graphical login.
+install -Dm644 /dev/stdin /etc/systemd/system/winduxedu-driver-probe.service <<'EOF'
+[Unit]
+Description=WinduxEdu hardware and firmware probe
+After=local-fs.target systemd-udev-settle.service
+Before=graphical.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'udevadm trigger --action=add; depmod -a; update-initramfs -u -k all; if command -v fwupdmgr >/dev/null 2>&1; then fwupdmgr get-devices || true; fi'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable winduxedu-driver-probe.service >/dev/null 2>&1 || true
+fi

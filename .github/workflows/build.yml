@@ -1,0 +1,307 @@
+---
+name: Build WinduxEdu Live ISO
+
+on:
+  push:
+    branches: [main, winduxedu-1.0-integration]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: winduxedu-live-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build WinduxEdu LiveCD and installer image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore locked component source cache
+        uses: actions/cache@v4
+        with:
+          path: artifacts/source-cache
+          key: winduxedu-component-sources-${{ runner.os }}-${{ hashFiles('packages/sources.lock.tsv') }}
+          restore-keys: |
+            winduxedu-component-sources-${{ runner.os }}-
+
+      - name: Show host capacity
+        run: |
+          df -h /
+          free -h
+
+      - name: Install live-build host tooling
+        run: |
+          set -euxo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          # Avoid the intermittently stalled Azure Ubuntu mirror on hosted
+          # runners; replace all runner sources with a minimal public archive
+          # configuration for deterministic setup.
+          sudo rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
+          cat <<'EOF' | sudo tee /etc/apt/sources.list
+          deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
+          deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
+          deb http://archive.ubuntu.com/ubuntu noble-security main restricted universe multiverse
+          EOF
+          # GitHub-hosted runners occasionally stall on a transient mirror
+          # connection; fail fast and retry instead of consuming the whole job.
+          sudo timeout 12m apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 update
+          sudo timeout 12m apt-get install -y --no-install-recommends \
+            live-build debootstrap debian-archive-keyring squashfs-tools xorriso grub-pc-bin \
+            grub-efi-amd64-bin isolinux syslinux syslinux-common syslinux-utils mtools dosfstools gpg cpio jq initramfs-tools-core socat qemu-system-x86 ovmf desktop-file-utils
+          lb --version
+          docker --version
+
+      - name: Build fixed WinduxEdu 1.0 component packages in Debian Bookworm
+        run: |
+          set -euxo pipefail
+          # ElevenDE and the original Go/C/Qt components use the fixed Go image.
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            golang:1.24-bookworm \
+            bash ./scripts/build-winduxedu-components.sh
+          # The audited Rust desktop tools use a modern Cargo image.  Keeping
+          # this separate avoids silently downgrading their Cargo.lock format.
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            rust:1.95-bookworm \
+            bash ./scripts/build-winduxedu-extra-components.sh
+          # Recipes run as root in their Debian containers; return the workspace
+          # artifacts to the runner user before writing manifests and cache data.
+          sudo chown -R "$USER:$USER" artifacts
+          ( cd artifacts/packages && sha256sum *.deb > SHA256SUMS )
+          python3 scripts/write-winduxedu-build-manifest.py
+          test -f artifacts/packages/elevende_3.5.1_amd64.deb
+          test -f artifacts/packages/winduxedu-store_2.3.0+winduxedu2_amd64.deb
+          test -f artifacts/packages/feedbackhub_1.0.0+winduxedu2_amd64.deb
+          test -f artifacts/packages/SHA256SUMS
+          ( cd artifacts/packages && sha256sum -c SHA256SUMS )
+          bash scripts/validate-winduxedu-component-packages.sh
+
+      - name: Stage verified WinduxEdu 1.0 packages and hooks
+        run: |
+          set -euxo pipefail
+          sudo ROOT="$GITHUB_WORKSPACE" PKGS="$GITHUB_WORKSPACE/artifacts/packages" \
+            bash scripts/stage-winduxedu-live-inputs.sh
+          ls -lh config/includes.chroot/opt/winduxedu/packages
+          find config/hooks -maxdepth 1 -name '*.chroot' -type f -printf '%f\n' | sort
+
+      - name: Configure WinduxEdu live-build image
+        run: |
+          set -euxo pipefail
+          sudo rm -rf lb .build stage cache auto chroot binary binary.tmp *.iso build.log 2>/dev/null || true
+          sudo lb config \
+            --ignore-system-defaults \
+            --mode debian \
+            --initramfs live-boot \
+            --initsystem systemd \
+            --distribution bookworm \
+            --architectures amd64 \
+            --linux-packages linux-image \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --mirror-bootstrap "http://deb.debian.org/debian" \
+            --parent-mirror-bootstrap "http://deb.debian.org/debian" \
+            --mirror-chroot "http://deb.debian.org/debian" \
+            --parent-mirror-chroot "http://deb.debian.org/debian" \
+            --mirror-chroot-security "http://security.debian.org/debian-security" \
+            --parent-mirror-chroot-security "http://security.debian.org/debian-security" \
+            --mirror-binary "http://deb.debian.org/debian" \
+            --parent-mirror-binary "http://deb.debian.org/debian" \
+            --mirror-binary-security "http://security.debian.org/debian-security" \
+            --parent-mirror-binary-security "http://security.debian.org/debian-security" \
+            --security false \
+            --mirror-debian-installer "http://deb.debian.org/debian" \
+            --keyring-packages "debian-archive-keyring" \
+            --binary-images iso-hybrid \
+            --compression gzip \
+            --bootappend-live "components splash" \
+            --iso-application "WinduxEdu Live" \
+            --iso-publisher "SYSTEM-Intel-MIC" \
+            --iso-volume "WinduxEdu 1.0" \
+            --source false \
+            --zsync false \
+            --firmware-chroot false \
+            --apt-recommends false \
+            --debian-installer false
+
+          sudo bash scripts/prepare-winduxedu-live-build-compression.sh
+
+          sudo mkdir -p config/archives
+          cat <<'EOF' | sudo tee config/archives/winduxedu.list.chroot
+          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          EOF
+          cat <<'EOF' | sudo tee config/archives/winduxedu.list.binary
+          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          EOF
+          sudo chmod 755 config/hooks/*.chroot \
+            config/includes.chroot/usr/local/bin/winduxedu-installer \
+            config/includes.chroot/usr/local/bin/winduxedu-power-action \
+            config/includes.chroot/usr/local/bin/winduxedu-logout \
+            config/includes.chroot/usr/local/sbin/winduxedu-live-session-init \
+            config/includes.chroot/usr/local/sbin/winduxedu-elevende-display \
+            config/includes.chroot/usr/local/libexec/winduxedu-component-launch \
+            config/includes.chroot/usr/local/libexec/winduxedu-privileged-action
+          # Keep isolinux.bin and every COM32 runtime module from the same
+          # syslinux package. In particular, isolinux.cfg -> vesamenu.c32
+          # requires ldlinux.c32, libcom32.c32 and libutil.c32 at boot time.
+          sudo cp -f /usr/lib/ISOLINUX/isolinux.bin config/bootloaders/isolinux/isolinux.bin
+          sudo cp -f /usr/lib/syslinux/modules/bios/*.c32 config/bootloaders/isolinux/
+          test -s config/bootloaders/isolinux/isolinux.bin
+          test -s config/bootloaders/isolinux/ldlinux.c32
+          test -s config/bootloaders/isolinux/libcom32.c32
+          test -s config/bootloaders/isolinux/libutil.c32
+          test -s config/bootloaders/isolinux/vesamenu.c32
+          sudo find config -maxdepth 4 -type f -printf '%p\n' | sort | head -200
+
+      - name: Build WinduxEdu ISO
+        run: |
+          set -euxo pipefail
+          echo "WinduxEdu build started: $(date --iso-8601=seconds)" | tee build.log
+          sudo lb build 2>&1 | tee -a build.log
+
+          # Use the same repack implementation locally and in CI. It retains the
+          # matching ISOLINUX tree and injects an x86_64 EFI System Partition.
+          ISO_SOURCE="$(find . -maxdepth 2 -type f \( -name '*WinduxEdu*.iso' -o -name '*.hybrid.iso' \) | head -n1)"
+          test -n "$ISO_SOURCE"
+          chmod 755 scripts/repack-winduxedu-dualboot-iso.sh
+          WINDUXEDU_BINARY_TREE="$GITHUB_WORKSPACE/binary" \
+            bash scripts/repack-winduxedu-dualboot-iso.sh "$ISO_SOURCE" 2>&1 | tee -a build.log
+          echo "WinduxEdu dual BIOS/UEFI ISO finished: $(date --iso-8601=seconds)" | tee -a build.log
+
+      - name: Verify WinduxEdu ISO
+        id: iso
+        run: |
+          set -euxo pipefail
+          ISO_SOURCE="$(find . -maxdepth 2 -type f \( -name '*WinduxEdu*.iso' -o -name '*.hybrid.iso' \) | head -n1)"
+          test -n "$ISO_SOURCE"
+          test -s "$ISO_SOURCE"
+          ISO="WinduxEdu-1.0-amd64-livecd.iso"
+          mv "$ISO_SOURCE" "$ISO"
+          test -s "$ISO"
+          echo "iso_path=$ISO" >> "$GITHUB_OUTPUT"
+          # Inspect the final ISO rather than trusting the live-build log.
+          xorriso -indev "$ISO" -report_el_torito plain 2>&1 | tee iso-boot-report.txt
+          BOOT_CHECK="$(mktemp -d)"
+          xorriso -osirrox on -indev "$ISO" -extract /isolinux/ldlinux.c32 "$BOOT_CHECK/ldlinux.c32" >/dev/null 2>&1
+          xorriso -osirrox on -indev "$ISO" -extract /isolinux/vesamenu.c32 "$BOOT_CHECK/vesamenu.c32" >/dev/null 2>&1
+          xorriso -osirrox on -indev "$ISO" -extract /efi.img "$BOOT_CHECK/efi.img" >/dev/null 2>&1
+          test -s "$BOOT_CHECK/ldlinux.c32"
+          test -s "$BOOT_CHECK/vesamenu.c32"
+          test -s "$BOOT_CHECK/efi.img"
+          # Inspect the compressed target filesystem for installer-critical files.
+          ROOT_CHECK="$(mktemp -d)"
+          xorriso -osirrox on -indev "$ISO" -extract /live/filesystem.squashfs "$ROOT_CHECK/filesystem.squashfs" >/dev/null 2>&1
+          unsquashfs -l "$ROOT_CHECK/filesystem.squashfs" > "$ROOT_CHECK/squashfs.list"
+          grep -q '/usr/bin/unsquashfs$' "$ROOT_CHECK/squashfs.list"
+          grep -q '/usr/bin/rsync$' "$ROOT_CHECK/squashfs.list"
+          grep -q '/usr/lib/.*/calamares/modules/partition/libcalamares_viewmodule_partition.so$' "$ROOT_CHECK/squashfs.list"
+          grep -q '/usr/lib/.*/calamares/modules/mount/module.desc$' "$ROOT_CHECK/squashfs.list"
+          grep -q '/etc/calamares/branding/winduxedu/show.qml$' "$ROOT_CHECK/squashfs.list"
+          grep -q '/etc/calamares/branding/winduxedu/stylesheet.qss$' "$ROOT_CHECK/squashfs.list"
+          grep -q '/usr/local/share/elevende-shell/icons/64x64/apps/winduxedu-installer.svg$' "$ROOT_CHECK/squashfs.list"
+          rm -rf "$BOOT_CHECK" "$ROOT_CHECK"
+          grep -q -E 'El Torito boot img.*BIOS|El Torito boot img.*UEFI|EFI|efi.img|isolinux' iso-boot-report.txt
+          chmod 755 scripts/validate-winduxedu-live-image.sh
+          sudo bash scripts/validate-winduxedu-live-image.sh "$ISO"
+          sha256sum "$ISO" | tee WinduxEdu-1.0-amd64-livecd.iso.sha256
+          cat > WinduxEdu-1.0-release-notes.md <<EOF
+          # WinduxEdu 1.0 Preview — LiveCD with installer
+
+          Build: ${GITHUB_RUN_NUMBER}
+          Commit: ${GITHUB_SHA}
+
+          This hybrid ISO includes the ElevenDE desktop, WinduxEdu boot and installer branding,
+          Chinese Fcitx5 input support, Microsoft Edge, VLC, Image Viewer, PeaZip, WinduxEdu Store,
+          the OpenBoard whiteboard and Matchbox touch keyboard from the Debian Bookworm archive,
+          the maximum-compatibility firmware/driver set, and Windows-style system tools built
+          from the locked package layer. Collected proprietary teaching apps are documented in
+          edu-software/ and are not part of the ISO build yet.
+
+          Verify the ISO before writing it to USB:
+
+          \`\`\`sh
+          sha256sum -c WinduxEdu-1.0-amd64-livecd.iso.sha256
+          \`\`\`
+          EOF
+          ls -lh "$ISO" WinduxEdu-1.0-amd64-livecd.iso.sha256 WinduxEdu-1.0-release-notes.md build.log
+
+      - name: Smoke boot WinduxEdu 1.0 ISO in QEMU BIOS and UEFI
+        run: |
+          set -euxo pipefail
+          chmod 755 scripts/qemu-boot-smoke.sh scripts/validate-winduxedu-live-image.sh
+          bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" bios 170
+          bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" uefi 170
+
+      - name: Upload QEMU visual diagnostics on completion or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinduxEdu-1.0-qemu-visual-diagnostics-${{ github.run_number }}
+          path: |
+            WinduxEdu-1.0-amd64-livecd.iso.bios.ppm
+            WinduxEdu-1.0-amd64-livecd.iso.uefi.ppm
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload WinduxEdu ISO and verification artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinduxEdu-1.0-amd64-livecd-with-installer-${{ github.run_number }}
+          path: |
+            ${{ steps.iso.outputs.iso_path }}
+            WinduxEdu-1.0-amd64-livecd.iso.sha256
+            WinduxEdu-1.0-release-notes.md
+            build.log
+            iso-boot-report.txt
+            WinduxEdu-1.0-amd64-livecd.iso.bios.ppm
+            WinduxEdu-1.0-amd64-livecd.iso.uefi.ppm
+            artifacts/packages/SHA256SUMS
+            artifacts/packages/WINDUXEDU-1.0-BUILD-MANIFEST.json
+            artifacts/packages/WINDUXEDU-1.0-COMPONENTS.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload component package set
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinduxEdu-1.0-component-packages-${{ github.run_number }}
+          path: artifacts/packages/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Publish WinduxEdu 1.0 Preview Release
+        # Every green build (push or manual dispatch) publishes a tagged
+        # pre-release once the ISO verifier and both BIOS/UEFI QEMU smoke
+        # checks succeed.
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: winduxedu-1.0-preview-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: WinduxEdu 1.0 Preview Build ${{ github.run_number }}
+          body_path: WinduxEdu-1.0-release-notes.md
+          prerelease: true
+          files: |
+            ${{ steps.iso.outputs.iso_path }}
+            WinduxEdu-1.0-amd64-livecd.iso.sha256
+            WinduxEdu-1.0-release-notes.md
+
+      - name: Cleanup runner disk
+        if: always()
+        run: |
+          sudo rm -rf lb .build stage cache chroot binary binary.tmp artifacts/work 2>/dev/null || true
+          df -h /

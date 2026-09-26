@@ -1,0 +1,70 @@
+# WinduxEdu 硬件兼容性层（最大兼容）
+# 策略与来源：docs/HARDWARE-COMPATIBILITY.md。
+# 全部包名已对照 Debian Bookworm 归档（main + non-free-firmware）逐一验证；
+# 仅存在于 bookworm-backports 的固件（firmware-intel-graphics、
+# firmware-intel-misc、firmware-mediatek、firmware-cirrus、
+# firmware-marvell-prestera）不进入镜像，作为可选项见兼容性文档。
+# 与 winduxedu-desktop.list.chroot 重复的固件不在此重复。
+
+# DKMS 基础环境（out-of-tree 驱动前置依赖）
+dkms
+build-essential
+
+# CPU 微码
+intel-microcode
+amd64-microcode
+
+# 固件：non-free-firmware 全量覆盖（Bookworm 实际存在的子集）
+firmware-linux-nonfree
+firmware-libertas
+firmware-ti-connectivity
+firmware-sof-signed
+firmware-samsung
+firmware-qlogic
+firmware-cavium
+firmware-bnx2
+firmware-bnx2x
+firmware-myricom
+firmware-netxen
+
+# 显卡开源栈工具（Intel/AMD 内核 modesetting + Mesa）
+mesa-utils
+mesa-va-drivers
+intel-media-va-driver
+
+# 蓝牙
+bluez
+bluez-tools
+libspa-0.2-bluetooth
+
+# 音频：PipeWire（Debian 默认音频栈）
+pipewire
+pipewire-pulse
+wireplumber
+
+# 输入：libinput 统一键盘/鼠标/触摸屏
+xserver-xorg-input-libinput
+libinput-tools
+evtest
+xinput-calibrator
+
+# 摄像头（UVC）
+v4l-utils
+guvcview
+ffmpeg
+
+# 打印与扫描
+cups
+cups-filters
+cups-client
+cups-daemon
+printer-driver-all
+openprinting-ppds
+foomatic-db-compressed-ppds
+hplip
+libsane-hpaio
+sane-utils
+
+# 指纹识别框架
+fprintd
+libpam-fprintd

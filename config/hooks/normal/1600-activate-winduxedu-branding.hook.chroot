@@ -1,0 +1,175 @@
+#!/bin/bash
+set -eu
+
+# Fail the image build early if the installed target cannot perform a real
+# Calamares installation. unpackfs executes unsquashfs inside the target.
+command -v unsquashfs >/dev/null 2>&1 || {
+    echo "WinduxEdu: squashfs-tools/unsquashfs is required in the target" >&2
+    exit 1
+}
+command -v rsync >/dev/null 2>&1 || {
+    echo "WinduxEdu: rsync is required by Calamares unpackfs" >&2
+    exit 1
+}
+find /usr/lib -path '*/calamares/modules/partition/libcalamares_viewmodule_partition.so' -print -quit | grep -q . || {
+    echo "WinduxEdu: Calamares partition module is missing" >&2
+    exit 1
+}
+find /usr/lib -path '*/calamares/modules/mount/module.desc' -print -quit | grep -q . || {
+    echo "WinduxEdu: Calamares mount module is missing" >&2
+    exit 1
+}
+
+# calamares-settings-debian supplies the tested Debian module sequence. Keep
+# that sequence but replace its selected branding component with WinduxEdu.
+SETTINGS=/etc/calamares/settings.conf
+if [ ! -f "$SETTINGS" ]; then
+    echo "WinduxEdu: Calamares settings are missing" >&2
+    exit 1
+fi
+if grep -qE '^[[:space:]]*branding:' "$SETTINGS"; then
+    sed -i -E 's|^([[:space:]]*branding:)[[:space:]]*.*$|\1 winduxedu|' "$SETTINGS"
+else
+    echo "WinduxEdu: Calamares settings have no branding selector" >&2
+    exit 1
+fi
+
+# Calamares requires an explicit slideshow key. The WinduxEdu source tree ships
+# its own show.qml; never copy Debian's placeholder slideshow over it.
+BRANDING=/etc/calamares/branding/winduxedu
+# Keep the GRUB theme self-contained both in the Live image and in the target
+# root copied by unpackfs.
+install -Dm644 /usr/share/winduxedu/branding/winduxedu-aurora-wallpaper.png \
+    /boot/grub/themes/winduxedu/winduxedu-aurora-wallpaper.png
+install -Dm644 /boot/grub/themes/winduxedu/theme.txt \
+    /usr/share/winduxedu/branding/theme.txt
+chmod 0755 /usr/local/libexec/winduxedu-target-postinstall.sh
+
+# Register a target-chroot shellprocess after Calamares creates the selected
+# user. This must not follow `packages`, because the Live temporary `user`
+# account is present then while the account selected in Calamares is created
+# by the later `users` module.
+SETTINGS=/etc/calamares/settings.conf
+if ! grep -q '^-[[:space:]]*id:[[:space:]]*winduxedu-postinstall' "$SETTINGS" 2>/dev/null; then
+    cat >> "$SETTINGS" <<'EOF'
+
+instances:
+- id: winduxedu-postinstall
+  module: shellprocess
+  config: winduxedu-postinstall.conf
+EOF
+fi
+if ! grep -q '^[[:space:]]*-[[:space:]]*shellprocess@winduxedu-postinstall[[:space:]]*$' "$SETTINGS"; then
+    awk '
+        /^[[:space:]]*-[[:space:]]*exec:[[:space:]]*$/ { in_exec=1 }
+        !done && in_exec && /^[[:space:]]*-[[:space:]]*users[[:space:]]*$/ {
+            indent=$0; sub(/[^[:space:]].*/, "", indent)
+            print $0
+            print indent "- shellprocess@winduxedu-postinstall"
+            done=1
+            next
+        }
+        { print }
+    ' "$SETTINGS" > "$SETTINGS.winduxedu" && mv "$SETTINGS.winduxedu" "$SETTINGS"
+fi
+
+if [ ! -f "$BRANDING/show.qml" ]; then
+    echo "WinduxEdu: custom Calamares show.qml is missing" >&2
+    exit 1
+fi
+if ! grep -q '^slideshow:' "$BRANDING/branding.desc"; then
+    printf '\nslideshow: "show.qml"\nslideshowAPI: 2\n' >> "$BRANDING/branding.desc"
+fi
+
+# Keep ElevenDE 3.5.1's own light default wallpaper.  The older WinduxEdu 1.0
+# Aurora asset remains available only for the separately branded GRUB theme;
+# it must never overwrite the desktop default or a new user's wallpaper.
+[ -s /usr/local/share/elevende-shell/wallpaper.png ] || {
+    echo "WinduxEdu: ElevenDE default wallpaper is missing" >&2
+    exit 1
+}
+install -Dm644 /usr/local/share/elevende-shell/wallpaper.png \
+    /etc/skel/.local/share/elevende/wallpaper.png
+
+# Use the WinduxEdu mark as a real ElevenDE theme icon. ElevenDE resolves desktop
+# file icons from its own theme before consulting system icon themes.
+for size in 64x64 96x96 128x128 scalable; do
+    install -Dm644 "$BRANDING/winduxedu-mark.svg" \
+        "/usr/local/share/elevende-shell/icons/$size/apps/winduxedu-installer.svg"
+done
+
+# Make the Live session and Calamares use Simplified Chinese by default.
+if [ -f /etc/locale.gen ]; then
+    sed -i -E 's/^#[[:space:]]*(zh_CN.UTF-8[[:space:]]+UTF-8)/\1/' /etc/locale.gen
+    locale-gen zh_CN.UTF-8
+fi
+cat > /etc/default/locale <<'EOF'
+LANG=zh_CN.UTF-8
+LANGUAGE=zh_CN:zh
+LC_MESSAGES=zh_CN.UTF-8
+EOF
+
+# Remove Debian's generic installer launcher from the application menu. The
+# WinduxEdu-branded Calamares entry remains the only graphical installer entry.
+for dir in /usr/share/applications /etc/xdg/autostart /etc/skel/Desktop; do
+    [ -d "$dir" ] || continue
+    # This hook runs under dash, whose `read` lacks -d.  The direct glob is
+    # POSIX-safe and still covers all package-provided desktop filenames.
+    for entry in "$dir"/*.desktop; do
+        [ -f "$entry" ] || continue
+        if grep -qiE '(^Name(\[[^]]+\])?=.*(Install Debian|Debian Installer|Install System|安装系统))|debian-installer-launcher|debian-installer.desktop|install-system.desktop' "$entry" 2>/dev/null; then
+            rm -f "$entry"
+        fi
+    done
+done
+chmod 0755 '/etc/skel/Desktop/Install WinduxEdu.desktop' 2>/dev/null || true
+chmod 0755 /usr/share/applications/winduxedu-installer.desktop 2>/dev/null || true
+
+# Keep human-readable system identity coherent outside the desktop itself.
+printf 'WinduxEdu 1.0 \\n \\l\n' > /etc/issue
+printf 'WinduxEdu 1.0\n' > /etc/issue.net
+
+# GRUB themes are read from /etc/default/grub by grub-mkconfig.  Only append
+# the WinduxEdu theme assignment after both theme assets have been staged.  This
+# prevents a missing file from becoming a boot-time GRUB theme warning.
+if [ -f /etc/default/grub ] && \
+   [ -s /boot/grub/themes/winduxedu/theme.txt ] && \
+   [ -s /boot/grub/themes/winduxedu/winduxedu-aurora-wallpaper.png ]; then
+    cat >> /etc/default/grub <<'EOF'
+
+# WinduxEdu 1.0 bootloader identity and presentation.
+GRUB_DISTRIBUTOR="WinduxEdu"
+GRUB_THEME="/boot/grub/themes/winduxedu/theme.txt"
+GRUB_TIMEOUT_STYLE=menu
+GRUB_TIMEOUT=6
+GRUB_DEFAULT=0
+GRUB_DISABLE_OS_PROBER=false
+EOF
+elif [ -f /etc/default/grub ]; then
+    # Never leave a stale WinduxEdu theme reference if staging failed.
+    sed -i '\|^GRUB_THEME="/boot/grub/themes/winduxedu/theme.txt"$|d' /etc/default/grub
+fi
+
+if [ -x "/opt/Copilot For Linux/copilot-for-linux" ]; then
+    install -Dm755 /dev/stdin /usr/local/bin/winduxedu-copilot <<'LAUNCH'
+#!/bin/sh
+set -eu
+APP="/opt/Copilot For Linux/copilot-for-linux"
+[ -x "$APP" ] || exit 127
+# Electron may refuse to start from a live session when its sandbox helper is
+# unavailable; this is the supported fallback for this bundled portable DEB.
+exec "$APP" --disable-gpu-sandbox --no-sandbox "$@"
+LAUNCH
+    install -Dm644 /dev/stdin /usr/share/applications/copilot-for-linux.desktop <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Copilot
+Name[zh_CN]=Copilot
+Comment=AI desktop assistant for WinduxEdu
+Exec=/usr/local/libexec/winduxedu-component-launch /usr/local/bin/winduxedu-copilot %U
+Terminal=false
+Icon=copilot-for-linux
+StartupWMClass=Copilot For Linux
+Categories=Utility;Network;
+DESKTOP
+fi
