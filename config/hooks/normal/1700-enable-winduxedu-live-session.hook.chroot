@@ -7,14 +7,23 @@ set -eu
 install -d -m 0755 /etc/winduxedu
 printf '%s\n' user > /etc/winduxedu/session-user
 
-# ElevenDE owns the only graphical session path. The two services are enabled
-# explicitly because live-build does not always preserve preset state. LightDM
-# must not be present or reintroduced as a competing greeter.
+# ElevenDE owns the only graphical session path. The enablement symlinks are
+# created explicitly because live-build does not always preserve preset state
+# and 'systemctl enable' cannot run reliably inside the build chroot: a
+# flattened regular file left at a .wants path (Windows checkout artifact)
+# silently defeats it, which boots to a text login instead of the desktop.
+# LightDM must not be present or reintroduced as a competing greeter.
 if command -v systemctl >/dev/null 2>&1; then
     systemctl disable lightdm.service >/dev/null 2>&1 || true
-    systemctl enable winduxedu-live-session-init.service >/dev/null 2>&1 || true
-    systemctl enable winduxedu-elevende-display.service >/dev/null 2>&1 || true
 fi
+install -d -m 0755 /etc/systemd/system/graphical.target.wants \
+    /etc/systemd/system/multi-user.target.wants
+rm -f /etc/systemd/system/graphical.target.wants/winduxedu-elevende-display.service \
+      /etc/systemd/system/multi-user.target.wants/winduxedu-live-session-init.service
+ln -sfn ../winduxedu-elevende-display.service \
+    /etc/systemd/system/graphical.target.wants/winduxedu-elevende-display.service
+ln -sfn ../winduxedu-live-session-init.service \
+    /etc/systemd/system/multi-user.target.wants/winduxedu-live-session-init.service
 
 # live-build can install the generic live-config systemd backend independently
 # of the explicit package list. Its oneshot service runs Before=basic.target,

@@ -106,6 +106,7 @@ require_path 'usr/local/libexec/winduxedu-privileged-action'
 require_path 'usr/share/polkit-1/actions/im.system-intel-mic.winduxedu.privileged-action.policy'
 require_path 'etc/systemd/system/winduxedu-elevende-display.service'
 require_path 'etc/systemd/system/graphical.target.wants/winduxedu-elevende-display.service'
+require_path 'etc/systemd/system/multi-user.target.wants/winduxedu-live-session-init.service'
 require_path 'usr/local/share/elevende-shell/icons/64x64/apps/winduxedu-installer.svg'
 
 # The system must use ElevenDE's native display/session chain, never LightDM.

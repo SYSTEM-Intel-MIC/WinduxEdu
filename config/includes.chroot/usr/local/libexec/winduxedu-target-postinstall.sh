@@ -31,6 +31,9 @@ $installed_account
 EOF
 if command -v systemctl >/dev/null 2>&1; then
     systemctl enable winduxedu-installed-cleanup.service >/dev/null 2>&1 || true
+    # Replace anything occupying the .wants path (a flattened regular file
+    # from a Windows checkout is not a symlink and defeats enablement).
+    rm -f /etc/systemd/system/graphical.target.wants/winduxedu-elevende-display.service
     systemctl enable winduxedu-elevende-display.service >/dev/null 2>&1 || true
 fi
 
