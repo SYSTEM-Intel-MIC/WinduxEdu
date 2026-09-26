@@ -162,7 +162,7 @@ jobs:
             --keyring-packages "debian-archive-keyring" \
             --binary-images iso-hybrid \
             --compression gzip \
-            --bootappend-live "components splash" \
+            --bootappend-live "components splash console=ttyS0,115200n8" \
             --iso-application "WinduxEdu Live" \
             --iso-publisher "SYSTEM-Intel-MIC" \
             --iso-volume "WinduxEdu 1.0" \
@@ -279,6 +279,10 @@ jobs:
       - name: Smoke boot WinduxEdu 1.0 ISO in QEMU BIOS and UEFI
         run: |
           set -euxo pipefail
+          # Hosted runners expose /dev/kvm but not to the unprivileged runner
+          # user; opening it lets the smoke boot use hardware virtualization
+          # (ordered -accel kvm -accel tcg in the script still falls back).
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
           chmod 755 scripts/qemu-boot-smoke.sh scripts/validate-winduxedu-live-image.sh
           bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" bios 420
           bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" uefi 420
