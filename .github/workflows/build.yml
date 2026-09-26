@@ -256,6 +256,9 @@ jobs:
           compression-level: 0
 
       - name: Upload WinduxEdu ISO and verification artifacts
+        # Best effort: free-plan artifact storage (500 MB) cannot hold the ISO.
+        # The Preview Release below is the authoritative distribution channel.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: WinduxEdu-1.0-amd64-livecd-with-installer-${{ github.run_number }}
@@ -275,6 +278,8 @@ jobs:
           compression-level: 0
 
       - name: Upload component package set
+        # Best effort: component DEBs may exceed the free-plan artifact quota.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: WinduxEdu-1.0-component-packages-${{ github.run_number }}
