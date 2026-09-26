@@ -280,8 +280,8 @@ jobs:
         run: |
           set -euxo pipefail
           chmod 755 scripts/qemu-boot-smoke.sh scripts/validate-winduxedu-live-image.sh
-          bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" bios 170
-          bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" uefi 170
+          bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" bios 420
+          bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" uefi 420
 
       - name: Upload QEMU visual diagnostics on completion or failure
         if: always()

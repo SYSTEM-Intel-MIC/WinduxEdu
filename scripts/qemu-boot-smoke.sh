@@ -12,8 +12,8 @@ usage() {
 [ "$#" -ge 2 ] || usage
 ISO="$1"
 MODE="$2"
-SECONDS="${3:-170}"
-RENDER_WAIT="${WINDUXEDU_QEMU_RENDER_WAIT:-120}"
+SECONDS="${3:-420}"
+RENDER_WAIT="${WINDUXEDU_QEMU_RENDER_WAIT:-340}"
 MONITOR_WAIT=20
 BOOT_MENU_WAIT=8
 CAPTURE_GRACE=10
@@ -43,9 +43,13 @@ rm -f "$FRAME"
 
 # virtio-vga is the supported automated graphics test adapter. Standard VGA
 # is retained as a documented compatibility follow-up rather than being used
-# to infer whether the ElevenDE session has visibly rendered.
-QEMU=(qemu-system-x86_64 -m 2048 -smp 2 -accel tcg -no-reboot -no-shutdown \
-      -vga virtio -display none -monitor "unix:${MONITOR},server=on,wait=off" -serial none \
+# to infer whether the ElevenDE session has visibly rendered.  Prefer KVM when
+# the runner exposes /dev/kvm (GitHub-hosted Linux runners do) and fall back
+# to TCG in ordered -accel chain form; TCG needs several minutes to reach a
+# rendered session, while KVM boots the live desktop in well under a minute.
+QEMU=(qemu-system-x86_64 -m 2048 -smp 2 -accel kvm -accel tcg -no-reboot -no-shutdown \
+      -vga virtio -display none -monitor "unix:${MONITOR},server=on,wait=off" \
+      -serial "file:${WORK}/serial.log" \
       -cdrom "$ISO" -boot d)
 if [ "$MODE" = uefi ]; then
     if [ -n "${OVMF_CODE:-}" ]; then
@@ -93,6 +97,14 @@ wait "$TIMEOUT_PID"
 rc=$?
 set -e
 cat "$LOG"
+# The guest serial console is the only place early-boot failures (initramfs,
+# live-boot media probes, systemd unit errors) become visible, so always dump
+# its tail next to the visual verdict.
+if [ -s "$WORK/serial.log" ]; then
+    echo "--- guest serial console (last 150 lines) ---"
+    tail -n 150 "$WORK/serial.log"
+    echo "--- end guest serial console ---"
+fi
 [ -s "$FRAME" ] || {
     echo "QEMU $MODE did not produce a post-selection graphical frame" >&2
     exit 1
