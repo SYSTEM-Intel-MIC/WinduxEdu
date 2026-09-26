@@ -5,7 +5,10 @@ Xft.antialias: true
 Xft.hinting: true
 Xft.hintstyle: hintslight
 Xft.rgba: rgb
-XTerm*faceName: DejaVu Sans Mono
+! xterm #328+ takes an explicit comma-separated fontconfig fallback chain;
+! fontconfig sort order alone does not reach Noto CJK for DejaVu patterns,
+! which rendered Chinese glyphs as boxes.
+XTerm*faceName: DejaVu Sans Mono,Noto Sans CJK SC
 XTerm*faceSize: 11
 ! Ambiguous East Asian punctuation remains single-column; ideographs keep
 ! their natural double-width while ASCII stays compact.
@@ -13,7 +16,7 @@ XTerm*cjkWidth: false
 XTerm*background: #000000
 XTerm*foreground: #f2f2f2
 XTerm*cursorColor: #ffffff
-xterm*faceName: DejaVu Sans Mono
+xterm*faceName: DejaVu Sans Mono,Noto Sans CJK SC
 xterm*faceSize: 11
 xterm*cjkWidth: false
 xterm*background: #000000

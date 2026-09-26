@@ -11,21 +11,6 @@
 
 安装清单：[`config/package-lists/winduxedu-education.list.chroot`](../config/package-lists/winduxedu-education.list.chroot)。构建时由 live-build 从 Bookworm 归档安装，不经过第三方源，不执行上游安装脚本。
 
-### OpenBoard（开源白板）
-
-| 项目 | 值 |
-| --- | --- |
-| 功能 | 面向课堂教学的交互式电子白板 |
-| Debian 源包 | `openboard` |
-| Bookworm 固定版本 | `1.6.4+dfsg-1+b1`（amd64） |
-| 上游项目 | [OpenBoard-org/OpenBoard](https://github.com/OpenBoard-org/OpenBoard) |
-| 上游站点 | <https://openboard.ch> |
-| 许可证 | GPL-3.0（Debian 打包声明：`GPL-3 with OpenSSL exception`） |
-| 获取途径 | Debian Bookworm `main`（`http://deb.debian.org/debian`） |
-| 本仓库改动 | 无。仅通过包清单安装官方二进制，不打补丁、不重打包 |
-
-> Debian 的 OpenBoard 为 dfsg 重打包版：移除了部分含内嵌第三方 JS/资源的 Web Widget（见 Debian `debian/copyright` 中的 Comment），其余为上游原代码。
-
 ### Matchbox-keyboard（触摸虚拟键盘）
 
 | 项目 | 值 |

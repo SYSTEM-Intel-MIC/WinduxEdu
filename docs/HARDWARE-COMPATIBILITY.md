@@ -6,7 +6,7 @@
 
 - [`config/package-lists/winduxedu-desktop.list.chroot`](../config/package-lists/winduxedu-desktop.list.chroot)——基础固件（Intel/AMD/Realtek/Atheros/Broadcom 无线、AMD 显卡、Intel 音频）与内核头文件
 - [`config/package-lists/winduxedu-compat.list.chroot`](../config/package-lists/winduxedu-compat.list.chroot)——本兼容性层新增：全量固件、微码、Mesa 工具、蓝牙、PipeWire、libinput 输入栈、摄像头、打印扫描、指纹框架
-- [`config/package-lists/winduxedu-education.list.chroot`](../config/package-lists/winduxedu-education.list.chroot)——教育组件（OpenBoard、Matchbox-keyboard）
+- [`config/package-lists/winduxedu-education.list.chroot`](../config/package-lists/winduxedu-education.list.chroot)——教育组件（Matchbox-keyboard）
 
 软件源：`main contrib non-free non-free-firmware`（live-build 与 `config/archives` 均已启用）。
 

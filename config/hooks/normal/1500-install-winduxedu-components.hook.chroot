@@ -98,7 +98,6 @@ write_component_entry winduxedu-widgets.desktop "WinduxEdu Widgets" "WinduxEdu �
 write_component_entry winduxedu-windowshit.desktop "WinduxEdu Commands" "WinduxEdu 命令" winduxedu-windowshit "$ADAPTER winduxedu-windowshit" "System;Utility;"
 write_component_entry winduxedu-winsat.desktop "WinduxEdu Experience Index" "WinduxEdu 体验指数" winduxedu-winsat "$ADAPTER winsat" "System;Utility;"
 write_component_entry winduxedu-winver.desktop "About WinduxEdu" "关于 WinduxEdu" winduxedu-winver "$ADAPTER winver" "System;Settings;"
-write_component_entry feedbackhub.desktop "Feedback Hub" "反馈中心" feedbackhub "$ADAPTER feedbackhub" "Utility;"
 # Desktop shortcuts use the same entries as All Apps, avoiding duplicate
 # launchers and preserving the package-provided official Edge icon.
 install -d /etc/skel/Desktop
@@ -114,7 +113,7 @@ Type=Application
 Name=Terminal
 Name[zh_CN]=终端
 Comment=WinduxEdu terminal
-Exec=xterm -fa "DejaVu Sans Mono" -fs 11 -xrm "XTerm*cjkWidth:false" -xrm "XTerm*background:#000000" -xrm "XTerm*foreground:#f2f2f2" -xrm "XTerm*cursorColor:#ffffff"
+Exec=xterm -fa "DejaVu Sans Mono,Noto Sans CJK SC" -fs 11 -xrm "XTerm*cjkWidth:false" -xrm "XTerm*background:#000000" -xrm "XTerm*foreground:#f2f2f2" -xrm "XTerm*cursorColor:#ffffff"
 Icon=utilities-terminal
 Terminal=false
 Categories=System;TerminalEmulator;
@@ -216,6 +215,6 @@ WinduxEdu 1.0 bundled components
 - WinduxEdu Troubleshooting
 - Sticky Keys and Widgets
 - Namespaced Windows command compatibility tools and Windows Experience Index
-- About WinduxEdu (winver) and Feedback Hub
+- About WinduxEdu (winver)
 - windowsuninstaller/mmclinux is not bundled: its requested public source was unavailable during audit
 EOF

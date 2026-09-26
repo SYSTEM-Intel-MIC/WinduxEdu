@@ -23,7 +23,7 @@ WinduxEdu 1.0 是面向 AMD64 的 Debian Bookworm 轻量级 X11 Live 发行版�
 | 组件类别 | 示例 | 固定与安全边界 |
 |---|---|---|
 | 桌面核心 | ElevenDE 3.5.1，提交 `b4b97ca4fa0ac46235dd8a20b508ff5c9bdf1026` | 从公开固定提交构建；保持 ElevenDE GPL 与其上游 SAS、Explorer、runbox 的独立许可证边界。[1] |
-| 普通桌面工具 | WinduxEdu Store、Troubleshooting、Sticky Keys、Widgets、Feedback Hub | 独立 DEB、XDG 入口与许可证副本；所有入口经 ElevenDE 会话适配器并映射为精选 Windows 11 图标，不写入用户配置或自动启动项。 |
+| 普通桌面工具 | WinduxEdu Store、Troubleshooting、Sticky Keys、Widgets | 独立 DEB、XDG 入口与许可证副本；所有入口经 ElevenDE 会话适配器并映射为精选 Windows 11 图标，不写入用户配置或自动启动项。 |
 | 命令兼容工具 | Windows 命令兼容工具 | 所有命令使用 `winduxedu-*` 前缀，避免覆盖 Linux 命令；系统操作继续通过标准系统授权路径执行。 |
 | 阻塞项 | `windowsuninstaller/mmclinux` | 请求的公开地址无法取得且许可证未知，不进入 ISO。 |
 

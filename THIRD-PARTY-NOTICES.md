@@ -18,8 +18,7 @@ Copyright © 2026 **SYSTEM-Intel-MIC**。除文件另有说明外，WinduxEdu �
 | WindowsWidget-for-Linux | `5b92311174dfe3236b995ced6aeae73487ef313c` [5] | MIT | 用户会话组件，不在 Live 会话默认自动启动。 |
 | windowshit | `5eac6c1d8e3d126bbbc03c76d11edd9e2badc718` [6] | MIT | 命令以 `winduxedu-` 前缀安装，避免覆盖 Debian 原生命令；涉及电源的命令仍受系统权限与确认限制。 |
 | WinSAT | `dc292e6c34d089f9b5718d44744d54a40dbb818e` [7] | WTFPL | 按需运行的基准测试，不自动启动。 |
-| linux-winver、FeedbackHub | 固定提交 [8] [9] | GPL-3.0 | 作为“About WinduxEdu”和反馈中心独立 DEB 构建，并保留 GPL 源码与许可证。 |
-| OpenBoard（开源白板） | Debian Bookworm `openboard` `1.6.4+dfsg-1+b1` [10] | GPL-3.0（Debian：GPL-3 with OpenSSL exception） | 仅从 Debian `main` 官方源安装官方二进制，不打补丁、不重打包；来源与版本声明见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)。 |
+| linux-winver | 固定提交 [8] | GPL-3.0 | 作为“About WinduxEdu”独立 DEB 构建，并保留 GPL 源码与许可证。 |
 | Matchbox-keyboard（触摸键盘） | Debian Bookworm `matchbox-keyboard` `0.2+git20160713-1` [11] | GPL-2-or-later | 仅从 Debian `main` 官方源安装官方二进制（含 `matchbox-keyboard-im`），不打补丁、不重打包；来源与版本声明见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)。 |
 | windowsuninstaller/mmclinux | 用户指定地址在审查时不可获取 | 未知 | GitHub API 返回 404，且未找到可验证替代公开来源，因此**未被集成**。提供可审计 URL 与许可证后才可加入。 |
 
@@ -58,7 +57,5 @@ WinduxEdu 自有源码、配置和构建脚本在本仓库公开。`packages/sou
 [6]: https://github.com/HelloAIXIAOJI/windowshit "windowshit"
 [7]: https://github.com/WhatDamon/WinSAT "WinSAT"
 [8]: https://github.com/DeepslateQAQ/linux-winver "linux-winver"
-[9]: https://github.com/com-in/FeedbackHub-For-Linux "FeedbackHub for Linux"
-[10]: https://github.com/OpenBoard-org/OpenBoard "OpenBoard upstream"
 [11]: https://wiki.debian.org/Teams/DebianMatchboxProject "Debian Matchbox project"
 [12]: https://github.com/HaydenReeve/WindowsIcons "WindowsIcons"

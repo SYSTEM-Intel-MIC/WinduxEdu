@@ -211,7 +211,6 @@ for path in \
     usr/bin/winduxedu-windowshit \
     usr/bin/winsat \
     usr/bin/winver \
-    usr/bin/feedbackhub \
     usr/bin/winduxedu-ipconfig \
     usr/local/bin/sas-screen; do
     require_path "$path"
@@ -240,8 +239,7 @@ for icon in \
     winduxedu-widgets \
     winduxedu-windowshit \
     winduxedu-winsat \
-    winduxedu-winver \
-    feedbackhub; do
+    winduxedu-winver; do
     require_path "usr/local/share/elevende-shell/icons/64x64/apps/${icon}.png"
 done
 
@@ -274,7 +272,7 @@ grep -q '<family>Noto Sans CJK SC</family>' "$FONTCONF"
 ! grep -q '<test name="lang" compare="contains"><string>zh</string></test>' "$FONTCONF"
 XTERM_RESOURCES="$WORK/elevende-xresources"
 cat_image_file 'etc/X11/Xresources.d/elevende' "$XTERM_RESOURCES"
-grep -q '^XTerm\*faceName: DejaVu Sans Mono$' "$XTERM_RESOURCES"
+grep -q '^XTerm\*faceName: DejaVu Sans Mono,Noto Sans CJK SC$' "$XTERM_RESOURCES"
 grep -q '^XTerm\*cjkWidth: false$' "$XTERM_RESOURCES"
 grep -q '^XTerm\*background: #000000$' "$XTERM_RESOURCES"
 

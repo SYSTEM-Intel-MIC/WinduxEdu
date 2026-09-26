@@ -47,7 +47,6 @@ WinduxEdu 不安装 LightDM。`winduxedu-elevende-display.service` 通过 Xorg/x
 | Windows Commands | `5eac6c1d` / MIT | `winduxedu-windowshit` Rust package。 | Terminal 图标；所有命令使用 `winduxedu-*` 前缀，避免覆盖 Linux 命令。 |
 | WinSAT | `dc292e6c` / WTFPL | `winduxedu-winsat` Python package。 | 芯片图标；只按需运行。 |
 | About WinduxEdu | `cdd2c192` / GPL-3.0 | `winduxedu-winver` GTK4/C package。 | 系统版本图标。 |
-| Feedback Hub | `67befa32` / GPL-3.0 | `feedbackhub` Python/GTK package。 | Feedback 图标。 |
 | `windowsuninstaller/mmclinux` | 无可验证公开来源 | 不进入来源锁、构建或 ISO。 | **未集成**；需要准确 URL 与许可证资料。 |
 
 完整 URL、提交与角色以 [`packages/sources.lock.tsv`](../packages/sources.lock.tsv) 为准，二进制 URL/SHA-256 以 [`packages/binaries.lock.tsv`](../packages/binaries.lock.tsv) 为准。

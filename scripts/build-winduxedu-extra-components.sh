@@ -228,20 +228,5 @@ install_desktop "$STAGE" "winduxedu-winver.desktop" "About WinduxEdu" "winver" "
 install_license "$SRC" "$STAGE" "winduxedu-winver"
 make_deb "winduxedu-winver" "1.0.0+winduxedu2" "libc6, libgtk-4-1" "$STAGE" "WinduxEdu version information"
 
-log "packaging Feedback Hub"
-SRC="$WORK/feedbackhub"; source_locked feedbackhub "$SRC"
-STAGE="$WORK/pkg-feedbackhub"
-install -d "$STAGE/usr/lib/feedbackhub"
-cp -a "$SRC/feedbackhub" "$STAGE/usr/lib/feedbackhub/"
-install -Dm755 /dev/stdin "$STAGE/usr/bin/feedbackhub" <<'SH'
-#!/bin/sh
-export PYTHONPATH=/usr/lib/feedbackhub${PYTHONPATH:+:$PYTHONPATH}
-exec python3 -m feedbackhub "$@"
-SH
-install -Dm644 "$SRC/feedbackhub.desktop" "$STAGE/usr/share/applications/feedbackhub.desktop"
-sed -i 's|^Exec=.*|Exec=feedbackhub|' "$STAGE/usr/share/applications/feedbackhub.desktop"
-install_license "$SRC" "$STAGE" "feedbackhub"
-make_deb "feedbackhub" "1.0.0+winduxedu2" "python3, python3-gi, gir1.2-gtk-3.0" "$STAGE" "WinduxEdu Feedback Hub"
-
 install -Dm644 "$SOURCE_LOCK" "$PKGS/WINDUXEDU-1.0-COMPONENTS.txt"
 log "built WinduxEdu 1.0 extra component packages"

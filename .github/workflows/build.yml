@@ -113,7 +113,6 @@ jobs:
           python3 scripts/write-winduxedu-build-manifest.py
           test -f artifacts/packages/elevende_3.5.1_amd64.deb
           test -f artifacts/packages/winduxedu-store_2.3.0+winduxedu2_amd64.deb
-          test -f artifacts/packages/feedbackhub_1.0.0+winduxedu2_amd64.deb
           test -f artifacts/packages/SHA256SUMS
           ( cd artifacts/packages && sha256sum -c SHA256SUMS )
           bash scripts/validate-winduxedu-component-packages.sh
@@ -263,7 +262,7 @@ jobs:
 
           This hybrid ISO includes the ElevenDE desktop, WinduxEdu boot and installer branding,
           Chinese Fcitx5 input support, Microsoft Edge, VLC, Image Viewer, PeaZip, WinduxEdu Store,
-          the OpenBoard whiteboard and Matchbox touch keyboard from the Debian Bookworm archive,
+          the Matchbox touch keyboard from the Debian Bookworm archive,
           the maximum-compatibility firmware/driver set, and Windows-style system tools built
           from the locked package layer. Collected proprietary teaching apps are documented in
           edu-software/ and are not part of the ISO build yet.

@@ -28,7 +28,6 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 
 | 组件 | 版本 | 许可证 | 来源 |
 | --- | --- | --- | --- |
-| **OpenBoard** 交互式白板 | `1.6.4+dfsg-1+b1` | GPL-3.0（Debian：GPL-3 with OpenSSL exception） | Debian `main`，上游 [OpenBoard-org/OpenBoard](https://github.com/OpenBoard-org/OpenBoard) |
 | **Matchbox-keyboard** 触摸虚拟键盘 | `0.2+git20160713-1`（含 `-im`） | GPL-2-or-later | Debian `main`，Matchbox Project |
 
 安装清单：[`config/package-lists/winduxedu-education.list.chroot`](config/package-lists/winduxedu-education.list.chroot)。仅安装官方二进制，不打补丁、不重打包。
@@ -77,7 +76,7 @@ WinduxEdu 对每个集成组件提供明确的 ElevenDE 图标别名，而不是
 
 ## 集成组件、上游与 WinduxEdu 修改
 
-下表为 WinduxEdu 1.0 的完整第三方组件声明。实际 URL 与不可变提交位于 `packages/sources.lock.tsv`；Copilot 和 PeaZip 的发布 DEB 与 SHA-256 位于 `packages/binaries.lock.tsv`。其中"入口/图标"均表示经过 ElevenDE 启动适配与 Windows 11 图标映射。教育组件（OpenBoard、Matchbox-keyboard、专有收录区）见上文"教学软件"与 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)。
+下表为 WinduxEdu 1.0 的完整第三方组件声明。实际 URL 与不可变提交位于 `packages/sources.lock.tsv`；Copilot 和 PeaZip 的发布 DEB 与 SHA-256 位于 `packages/binaries.lock.tsv`。其中"入口/图标"均表示经过 ElevenDE 启动适配与 Windows 11 图标映射。教育组件（Matchbox-keyboard、专有收录区）见上文"教学软件"与 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)。
 
 | 组件 | 上游 | WinduxEdu 包与技术实现 | 入口/图标与安全边界 |
 | --- | --- | --- | --- |
@@ -95,7 +94,6 @@ WinduxEdu 对每个集成组件提供明确的 ElevenDE 图标别名，而不是
 | Windows Commands | [HelloAIXIAOJI/windowshit](https://github.com/HelloAIXIAOJI/windowshit) | Rust 1.95 构建；所有命令以 `winduxedu-*` 命名空间暴露，避免覆盖 Linux 命令。 | `winduxedu-windowshit` / Terminal 图标；电源命令仍受权限控制。 |
 | WinSAT | [WhatDamon/WinSAT](https://github.com/WhatDamon/WinSAT) | Python 模块打包。 | `winsat` / 芯片图标。 |
 | About WinduxEdu | [DeepslateQAQ/linux-winver](https://github.com/DeepslateQAQ/linux-winver) | GTK4/C 构建。 | `winver` / 系统版本图标。 |
-| Feedback Hub | [com-in/FeedbackHub-For-Linux](https://github.com/com-in/FeedbackHub-For-Linux) | Python/GTK 包装。 | `feedbackhub` / Feedback 图标。 |
 | mmclinux | `windowsuninstaller/mmclinux` | 用户提供的公开地址在审计时无法确认，未进入来源锁、构建、ISO 或菜单。 | **未集成。** 提供可审计来源与许可后才可能评估。 |
 
 ## 构建、验证与发布

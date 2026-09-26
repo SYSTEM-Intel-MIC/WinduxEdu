@@ -11,7 +11,7 @@ compgen -G "$PKGS/*.deb" >/dev/null || { echo "no component DEBs" >&2; exit 1; }
     cd "$PKGS"
     sha256sum -c SHA256SUMS
 )
-for required in elevende_3.5.1_amd64.deb winduxedu-store_2.3.0+winduxedu2_amd64.deb feedbackhub_1.0.0+winduxedu2_amd64.deb; do
+for required in elevende_3.5.1_amd64.deb winduxedu-store_2.3.0+winduxedu2_amd64.deb; do
     [ -f "$PKGS/$required" ] || { echo "missing required component package: $required" >&2; exit 1; }
 done
 
@@ -28,7 +28,7 @@ for deb in "$PKGS"/*.deb; do
     # explicit.  LinuxPCManager and linux-regedit remain documented exceptions
     # because their current upstream repositories do not provide a license.
     case "$pkg" in
-        winduxedu-device-manager|feedbackhub|winduxedu-*)
+        winduxedu-device-manager|winduxedu-*)
             if [ "$pkg" != linux-pcmanager ] && [ "$pkg" != linux-regedit ]; then
                 [ -s "$root/usr/share/doc/$pkg/copyright" ] || {
                     echo "$pkg lacks /usr/share/doc/$pkg/copyright" >&2; exit 1;

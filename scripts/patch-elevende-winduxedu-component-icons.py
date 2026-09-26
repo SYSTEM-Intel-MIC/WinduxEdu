@@ -23,7 +23,6 @@ entries = (
     ("winduxedu-windowshit", "winduxedu-windowshit"),
     ("winsat", "winduxedu-winsat"),
     ("winver", "winduxedu-winver"),
-    ("feedbackhub", "feedbackhub"),
 )
 marker = '        { "", "" }\n'
 text = path.read_text(encoding="utf-8")
