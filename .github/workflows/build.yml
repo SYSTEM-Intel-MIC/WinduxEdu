@@ -130,8 +130,10 @@ jobs:
           find config/hooks -maxdepth 1 -name '*.chroot' -type f -printf '%f\n' | sort
           # Reassemble and double-verify the collected proprietary teaching
           # DEBs into the chroot tree.  Chroot hook 1550 installs them and
-          # deletes the staged copies before the squashfs is produced.
-          python3 scripts/assemble-edu-debs.py \
+          # deletes the staged copies before the squashfs is produced.  Run as
+          # root: the staging script above already created the parent
+          # opt/winduxedu/ directories root-owned via install -d.
+          sudo python3 scripts/assemble-edu-debs.py \
             --output config/includes.chroot/opt/winduxedu/edu-packages
           test "$(find config/includes.chroot/opt/winduxedu/edu-packages \
             -maxdepth 1 -name '*.deb' -type f | wc -l)" -eq 8
