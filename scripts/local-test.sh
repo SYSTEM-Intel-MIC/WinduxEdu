@@ -65,6 +65,11 @@ sudo python3 scripts/assemble-edu-debs.py \
 sudo rm -rf lb .build stage cache auto chroot binary binary.tmp *.iso build.log 2>/dev/null || true
 
 echo "==> Configuring Bookworm Live ISO"
+# The rootfs squashfs is compressed with xz: Ubuntu's legacy live-build
+# 3.0~a57 hard-codes "-comp xz" in lb_binary_rootfs and has no
+# --chroot-squashfs-compression-type option, while the now-deleted
+# scripts/prepare-winduxedu-live-build-compression.sh used to patch that
+# stanza to gzip.  --compression only picks the tarball compressor.
 sudo lb config \
     --ignore-system-defaults \
     --mode debian \
@@ -87,8 +92,7 @@ sudo lb config \
     --mirror-debian-installer "http://deb.debian.org/debian" \
     --keyring-packages "debian-archive-keyring" \
     --binary-images iso-hybrid \
-    --chroot-squashfs-compression-type xz \
-    --compression xz \
+    --compression gzip \
     --bootappend-live "components splash" \
     --iso-application "WinduxEdu Live" \
     --iso-publisher "SYSTEM-Intel-MIC" \

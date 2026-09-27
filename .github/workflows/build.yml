@@ -147,6 +147,12 @@ jobs:
         run: |
           set -euxo pipefail
           sudo rm -rf lb .build stage cache auto chroot binary binary.tmp *.iso build.log 2>/dev/null || true
+          # The rootfs squashfs is compressed with xz: Ubuntu's legacy live-build
+          # 3.0~a57 hard-codes "-comp xz" in lb_binary_rootfs and has no
+          # --chroot-squashfs-compression-type option, while the now-deleted
+          # scripts/prepare-winduxedu-live-build-compression.sh used to patch
+          # that stanza to gzip.  --compression only picks the tarball
+          # compressor, whose accepted values here are bzip2|gzip|lzip|none.
           sudo lb config \
             --ignore-system-defaults \
             --mode debian \
@@ -170,8 +176,7 @@ jobs:
             --mirror-debian-installer "http://deb.debian.org/debian" \
             --keyring-packages "debian-archive-keyring" \
             --binary-images iso-hybrid \
-            --chroot-squashfs-compression-type xz \
-            --compression xz \
+            --compression gzip \
             --bootappend-live "components splash console=ttyS0,115200n8" \
             --iso-application "WinduxEdu Live" \
             --iso-publisher "SYSTEM-Intel-MIC" \
