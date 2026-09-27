@@ -14,6 +14,10 @@ ISO="$1"
 MODE="$2"
 SECONDS="${3:-420}"
 RENDER_WAIT="${WINDUXEDU_QEMU_RENDER_WAIT:-340}"
+# First frame, captured well before the final one.  Comparing the two is what
+# separates "the desktop never rendered" from "it rendered and then lost the
+# framebuffer", and a slow first boot must not be mistaken for the former.
+EARLY_WAIT="${WINDUXEDU_QEMU_EARLY_WAIT:-60}"
 MONITOR_WAIT=20
 BOOT_MENU_WAIT=8
 CAPTURE_GRACE=10
@@ -24,6 +28,10 @@ VISUAL_VALIDATOR="$SCRIPT_DIR/validate-qemu-visual-frame.py"
 case "$MODE" in bios|uefi) ;; *) usage ;; esac
 if [ "$SECONDS" -lt "$MIN_RUNTIME" ]; then
     echo "QEMU timeout ${SECONDS}s is shorter than the required ${MIN_RUNTIME}s startup/capture budget" >&2
+    exit 2
+fi
+if [ "$EARLY_WAIT" -le 0 ] || [ "$EARLY_WAIT" -ge "$RENDER_WAIT" ]; then
+    echo "WINDUXEDU_QEMU_EARLY_WAIT must fall strictly between 0 and RENDER_WAIT (${RENDER_WAIT}s)" >&2
     exit 2
 fi
 for command in qemu-system-x86_64 timeout socat python3; do
@@ -38,8 +46,9 @@ cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 MONITOR="$WORK/monitor.sock"
 FRAME="${WINDUXEDU_QEMU_SMOKE_FRAME:-${ISO}.${MODE}.ppm}"
+EARLY_FRAME="${ISO}.${MODE}.early.ppm"
 LOG="$WORK/qemu.log"
-rm -f "$FRAME"
+rm -f "$FRAME" "$EARLY_FRAME"
 
 # virtio-vga is the supported automated graphics test adapter. Standard VGA
 # is retained as a documented compatibility follow-up rather than being used
@@ -89,7 +98,9 @@ printf 'sendkey ret\n' | socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || {
 # Under TCG the native C/Xlib shell may still be drawing after Xorg itself has
 # exposed a gray root window. Keep this window long enough to distinguish that
 # intermediate state from a usable rendered ElevenDE desktop.
-sleep "$RENDER_WAIT"
+sleep "$EARLY_WAIT"
+printf 'screendump %s\n' "$EARLY_FRAME" | socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || true
+sleep $((RENDER_WAIT - EARLY_WAIT))
 printf 'screendump %s\n' "$FRAME" | socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || true
 
 set +e
@@ -98,18 +109,34 @@ rc=$?
 set -e
 cat "$LOG"
 # The guest serial console is the only place early-boot failures (initramfs,
-# live-boot media probes, systemd unit errors) become visible, so always dump
-# its tail next to the visual verdict.
+# live-boot media probes, systemd unit errors) and the smoke-diagnostics dump
+# become visible, so always print its tail next to the visual verdict. 600
+# lines leaves room for the second diagnostics block emitted shortly before
+# the final capture.
 if [ -s "$WORK/serial.log" ]; then
-    echo "--- guest serial console (last 150 lines) ---"
-    tail -n 150 "$WORK/serial.log"
+    echo "--- guest serial console (last 600 lines) ---"
+    tail -n 600 "$WORK/serial.log"
     echo "--- end guest serial console ---"
+fi
+# The early frame is diagnostic context only: it reports whether the desktop
+# was already up at EARLY_WAIT, but never decides the verdict. A black early
+# frame followed by a rendered final frame is a slow boot; the reverse means
+# the session painted and then lost the framebuffer.
+if [ -s "$EARLY_FRAME" ]; then
+    echo "--- early frame (${EARLY_WAIT}s after boot selection) ---"
+    python3 "$VISUAL_VALIDATOR" "$EARLY_FRAME" 2>&1 \
+        || echo "early frame is not a rendered desktop yet (informational only)" >&2
+    echo "--- end early frame ---"
+else
+    echo "no early frame was captured (informational only)" >&2
 fi
 [ -s "$FRAME" ] || {
     echo "QEMU $MODE did not produce a post-selection graphical frame" >&2
     exit 1
 }
+echo "--- final frame (${RENDER_WAIT}s after boot selection) ---"
 python3 "$VISUAL_VALIDATOR" "$FRAME"
+echo "--- end final frame ---"
 # Timeout means the guest remained alive past the bounded post-selection boot
 # interval; immediate exits or host-visible firmware errors fail the job.
 if [ "$rc" -ne 124 ]; then

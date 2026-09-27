@@ -276,15 +276,16 @@ grep -q '^XTerm\*faceName: DejaVu Sans Mono,Noto Sans CJK SC$' "$XTERM_RESOURCES
 grep -q '^XTerm\*cjkWidth: false$' "$XTERM_RESOURCES"
 grep -q '^XTerm\*background: #000000$' "$XTERM_RESOURCES"
 
-# The collected proprietary teaching applications must be installed.  希沃管家
-# (com.seewo.terminalmanager) is intentionally excluded: its libstdc++6 (<< 9)
-# dependency is unsatisfiable on Bookworm and hook 1550 skips it.
+# The collected proprietary teaching applications must be installed, including
+# 希沃管家 (com.seewo.terminalmanager), whose bogus "libstdc++6 (<< 9)" clause
+# hook 1550 rewrites out of the control file before handing it to apt.
 DPKG_STATUS="$FULL_ROOT/var/lib/dpkg/status"
 for edu_package in \
     onlyoffice-desktopeditors \
     com.seewo.easinote5 \
     com.seewo.easicare \
     com.seewo.easicamera \
+    com.seewo.terminalmanager \
     linuxqq \
     wechat \
     com.alibabainc.dingtalk; do
@@ -293,14 +294,36 @@ for edu_package in \
         exit 1
     }
 done
-if grep -qx 'Package: com.seewo.terminalmanager' "$DPKG_STATUS"; then
-    echo 'unsatisfiable Seewo Terminal Manager must not be installed' >&2
-    exit 1
-fi
-# Menu visibility: Seewo whiteboard entries only ship under /opt/apps/..., so
-# the install hook must have exported a /usr/share/applications counterpart.
+# Menu visibility: the whiteboard and terminal-manager entries only ship under
+# /opt/apps/..., so the install hook must have exported a real, non-empty
+# /usr/share/applications counterpart.  The terminal manager DEB ships a
+# zero-byte placeholder there, so an existence test alone would not suffice.
 require_path 'usr/share/applications/com.seewo.easinote5.desktop'
 require_path 'usr/share/applications/com.alibabainc.dingtalk.desktop'
+require_path 'usr/share/applications/com.seewo.terminalmanager.desktop'
+[ -s "$FULL_ROOT/usr/share/applications/com.seewo.terminalmanager.desktop" ] || {
+    echo 'exported Seewo Terminal Manager menu entry is empty' >&2
+    exit 1
+}
+# Vendor boot-time activations stay off in a generic Live image: the terminal
+# manager daemon, the MAXHUB alfred D-Bus service and the Seewo NIC script are
+# masked through /etc/systemd/system (unit files themselves remain dpkg-owned),
+# and the terminal manager's session autostart entry is removed.  All three
+# still launch on demand from the menu where the vendor intends them to.
+for masked_unit in \
+    com.seewo.terminalmanager.service \
+    com.cvte.maxhub.alfred.service \
+    disable-seewo-network-card.service; do
+    mask_target="$(readlink "$FULL_ROOT/etc/systemd/system/$masked_unit" 2>/dev/null || true)"
+    [ "$mask_target" = "/dev/null" ] || {
+        echo "vendor unit is not masked in the final image: $masked_unit (got: ${mask_target:-absent})" >&2
+        exit 1
+    }
+done
+if [ -e "$FULL_ROOT/etc/xdg/autostart/com.seewo.terminalmanager.desktop" ]; then
+    echo 'Seewo Terminal Manager autostart entry survived into the final image' >&2
+    exit 1
+fi
 
 # All Apps must not surface session/power helpers as regular applications.  This
 # validates the fully installed filesystem rather than trusting the source hook.

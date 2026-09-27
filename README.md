@@ -40,7 +40,7 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 - **与 SYSTEM-Intel-MIC 无关**：本组织非开发者、非分发维护者、不拥有其商标、不提供任何保证；
 - **仅作收录、版本不更换**：`Package`/`Version`/SHA-256 固定于 `edu-software/DEB-INVENTORY.tsv`；
 - 为遵守 GitHub 单文件 100 MB 上限，每个 DEB 以 **50 MiB 分卷**存放（`PARTS-INDEX.tsv` 逐卷哈希，`scripts/assemble-edu-debs.py` 重组并双层校验）。
-- **进入 Live 镜像**：CI 在 staging 阶段用 `scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages` 重组并校验，`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 以 `apt-get install -y --no-install-recommends` 逐个安装进 chroot（安装后删除暂存目录，不进 squashfs）。**希沃管家（com.seewo.terminalmanager）被有意排除**：其硬依赖 `libstdc++6 (<< 9)` 在 Bookworm（12.x）上永远无法满足；其余 7 个包由 `scripts/validate-winduxedu-live-image.sh` 在最终 squashfs 的 dpkg status 中逐一断言。`libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；`--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网抓取字体。希沃/钉钉/微信/QQ 等入口若只自带 `/opt/apps/...` 桌面文件，安装钩子会补拷到 `/usr/share/applications/` 保证菜单可见。
+- **进入 Live 镜像**：CI 在 staging 阶段用 `scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages` 重组并校验，`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 以 `apt-get install -y --no-install-recommends` 逐个安装进 chroot（安装后删除暂存目录，不进 squashfs）。**希沃管家（com.seewo.terminalmanager）同样安装**：安装钩子先用 `dpkg-deb` 把它 control 里在 Bookworm 上永远无法满足的 `libstdc++6 (<< 9)` 改写掉，再交给 apt，避免整个事务中止；8 个包由 `scripts/validate-winduxedu-live-image.sh` 在最终 squashfs 的 dpkg status 中逐一断言。该包的 systemd 单元与 `/etc/xdg/autostart` 自启项在通用 Live 镜像上被屏蔽，菜单入口保留可手动启动（详见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)）。`libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；`--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网抓取字体。希沃/钉钉/微信/QQ 等入口若只自带 `/opt/apps/...` 桌面文件，安装钩子会补拷到 `/usr/share/applications/` 保证菜单可见。
 
 声明全文见 [`edu-software/README.md`](edu-software/README.md)。
 
@@ -107,7 +107,7 @@ cd winduxedu
 bash scripts/local-test.sh
 ```
 
-构建顺序为：来源锁与缓存 → 核心/附加 DEB → SHA-256 与包元数据校验 → 构建清单 → Live staging → Bookworm ISO → BIOS/UEFI 重打包 → squashfs 内容校验 → QEMU BIOS/UEFI 冒烟。`scripts/validate-winduxedu-live-image.sh` 必须确认 Calamares 后安装模块、最小 Live sudoers、无 LightDM、原生 ElevenDE 服务、13 个图标别名、受限 polkit 调度器、无系统命令桌面入口、WinduxEdu Store、关键组件入口，以及 7 个专有教学软件（希沃管家除外）均已安装在最终 squashfs 中。
+构建顺序为：来源锁与缓存 → 核心/附加 DEB → SHA-256 与包元数据校验 → 构建清单 → Live staging → Bookworm ISO → BIOS/UEFI 重打包 → squashfs 内容校验 → QEMU BIOS/UEFI 冒烟。根文件系统用 `xz` 压缩（8 个专有教学软件会让 ISO 接近 ISO9660 的 4 GiB 单文件上限，gzip 的压缩比不够），构建步骤显式断言最终 ISO 小于 4 GiB；超过 GitHub 2 GiB 单附件上限时按原始字节切分成 `.001/.002` 卷发布。`scripts/validate-winduxedu-live-image.sh` 必须确认 Calamares 后安装模块、最小 Live sudoers、无 LightDM、原生 ElevenDE 服务、13 个图标别名、受限 polkit 调度器、无系统命令桌面入口、WinduxEdu Store、关键组件入口、厂商开机单元已屏蔽，以及 8 个专有教学软件均已安装在最终 squashfs 中。
 
 GitHub Actions（[`.github/workflows/build.yml`](.github/workflows/build.yml)）在 `main` 与 `winduxedu-1.0-integration` 推送时运行：
 

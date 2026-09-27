@@ -170,7 +170,8 @@ jobs:
             --mirror-debian-installer "http://deb.debian.org/debian" \
             --keyring-packages "debian-archive-keyring" \
             --binary-images iso-hybrid \
-            --compression gzip \
+            --chroot-squashfs-compression-type xz \
+            --compression xz \
             --bootappend-live "components splash console=ttyS0,115200n8" \
             --iso-application "WinduxEdu Live" \
             --iso-publisher "SYSTEM-Intel-MIC" \
@@ -180,8 +181,6 @@ jobs:
             --firmware-chroot false \
             --apt-recommends false \
             --debian-installer false
-
-          sudo bash scripts/prepare-winduxedu-live-build-compression.sh
 
           sudo mkdir -p config/archives
           cat <<'EOF' | sudo tee config/archives/winduxedu.list.chroot
@@ -199,6 +198,7 @@ jobs:
             config/includes.chroot/usr/local/bin/winduxedu-logout \
             config/includes.chroot/usr/local/sbin/winduxedu-live-session-init \
             config/includes.chroot/usr/local/sbin/winduxedu-elevende-display \
+            config/includes.chroot/usr/local/sbin/winduxedu-smoke-diagnostics \
             config/includes.chroot/usr/local/libexec/winduxedu-component-launch \
             config/includes.chroot/usr/local/libexec/winduxedu-privileged-action
           # Keep isolinux.bin and every COM32 runtime module from the same
@@ -223,9 +223,26 @@ jobs:
           # matching ISOLINUX tree and injects an x86_64 EFI System Partition.
           ISO_SOURCE="$(find . -maxdepth 2 -type f \( -name '*WinduxEdu*.iso' -o -name '*.hybrid.iso' \) | head -n1)"
           test -n "$ISO_SOURCE"
+          # ISO9660 level 1/2 -- what `xorriso -as mkisofs` defaults to for both
+          # live-build and scripts/repack-winduxedu-dualboot-iso.sh -- cannot
+          # address a file of 4 GiB - 1, and /live/filesystem.squashfs is exactly
+          # that kind of file.  The integrated teaching applications grow the
+          # rootfs every release, so check explicitly and fail with a readable
+          # message rather than an opaque xorriso error.
+          ISO_BYTES="$(stat -c %s "$ISO_SOURCE")"
+          if [ "$ISO_BYTES" -ge 4294967296 ]; then
+            echo "ISO is ${ISO_BYTES} bytes, at or above the 4 GiB ISO9660 limit; shrink the rootfs or split the package set" >&2
+            exit 1
+          fi
+          echo "ISO size check passed: ${ISO_BYTES} bytes (< 4 GiB)" | tee -a build.log
           chmod 755 scripts/repack-winduxedu-dualboot-iso.sh
           WINDUXEDU_BINARY_TREE="$GITHUB_WORKSPACE/binary" \
             bash scripts/repack-winduxedu-dualboot-iso.sh "$ISO_SOURCE" 2>&1 | tee -a build.log
+          ISO_BYTES="$(stat -c %s "$ISO_SOURCE")"
+          if [ "$ISO_BYTES" -ge 4294967296 ]; then
+            echo "Repacked ISO is ${ISO_BYTES} bytes, at or above the 4 GiB ISO9660 limit" >&2
+            exit 1
+          fi
           echo "WinduxEdu dual BIOS/UEFI ISO finished: $(date --iso-8601=seconds)" | tee -a build.log
 
       - name: Verify WinduxEdu ISO
@@ -351,7 +368,9 @@ jobs:
           name: WinduxEdu-1.0-qemu-visual-diagnostics-${{ github.run_number }}
           path: |
             WinduxEdu-1.0-amd64-livecd.iso.bios.ppm
+            WinduxEdu-1.0-amd64-livecd.iso.bios.early.ppm
             WinduxEdu-1.0-amd64-livecd.iso.uefi.ppm
+            WinduxEdu-1.0-amd64-livecd.iso.uefi.early.ppm
           if-no-files-found: warn
           retention-days: 14
           compression-level: 0
@@ -370,7 +389,9 @@ jobs:
             build.log
             iso-boot-report.txt
             WinduxEdu-1.0-amd64-livecd.iso.bios.ppm
+            WinduxEdu-1.0-amd64-livecd.iso.bios.early.ppm
             WinduxEdu-1.0-amd64-livecd.iso.uefi.ppm
+            WinduxEdu-1.0-amd64-livecd.iso.uefi.early.ppm
             artifacts/packages/SHA256SUMS
             artifacts/packages/WINDUXEDU-1.0-BUILD-MANIFEST.json
             artifacts/packages/WINDUXEDU-1.0-COMPONENTS.txt

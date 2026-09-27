@@ -87,7 +87,8 @@ sudo lb config \
     --mirror-debian-installer "http://deb.debian.org/debian" \
     --keyring-packages "debian-archive-keyring" \
     --binary-images iso-hybrid \
-    --compression gzip \
+    --chroot-squashfs-compression-type xz \
+    --compression xz \
     --bootappend-live "components splash" \
     --iso-application "WinduxEdu Live" \
     --iso-publisher "SYSTEM-Intel-MIC" \
@@ -97,8 +98,6 @@ sudo lb config \
     --firmware-chroot false \
     --apt-recommends false \
     --debian-installer false
-
-sudo bash scripts/prepare-winduxedu-live-build-compression.sh
 
 sudo mkdir -p config/archives
 cat <<'EOF' | sudo tee config/archives/winduxedu.list.chroot >/dev/null
@@ -115,6 +114,7 @@ sudo chmod 755 config/hooks/*.chroot \
     config/includes.chroot/usr/local/bin/winduxedu-installer \
     config/includes.chroot/usr/local/sbin/winduxedu-live-session-init \
     config/includes.chroot/usr/local/sbin/winduxedu-elevende-display \
+    config/includes.chroot/usr/local/sbin/winduxedu-smoke-diagnostics \
     config/includes.chroot/usr/local/libexec/winduxedu-component-launch
 sudo cp -f /usr/lib/ISOLINUX/isolinux.bin config/bootloaders/isolinux/isolinux.bin
 sudo cp -f /usr/lib/syslinux/modules/bios/*.c32 config/bootloaders/isolinux/

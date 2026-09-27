@@ -11,37 +11,103 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 
 installed=0
-skipped=0
 for deb in "$EDU_DIR"/*.deb; do
-    case "$(basename "$deb")" in
-        *管家*|*terminalmanager*)
-            # 希沃管家 hard-depends on libstdc++6 (<< 9); Debian Bookworm ships
-            # 12.x, so apt can never satisfy it and would abort the whole
-            # transaction.  Skip it; every other collected package must install.
-            echo "skip unsatisfiable package: $(basename "$deb")" >&2
-            skipped=$((skipped + 1))
-            continue
-            ;;
-    esac
+    package_name="$(dpkg-deb -f "$deb" Package)"
+
+    if [ "$package_name" = "com.seewo.terminalmanager" ]; then
+        # 希沃管家 declares "Depends: libstdc++6 (>= 8.3), libstdc++6 (<< 9),
+        # dkms".  The upper bound is vendor over-caution: scanning every ELF in
+        # the package shows the highest requirement is GLIBCXX_3.4.22 /
+        # CXXABI_1.3.11 (GCC 5 era), which Bookworm's libstdc++6 12.x still
+        # satisfies backwards.  apt can never resolve `<< 9` here and would
+        # abort the whole transaction, so drop the bogus clause and rebuild the
+        # DEB before handing it to apt.  Rewriting the control file keeps the
+        # dpkg database consistent for the later apt runs in this build;
+        # --force-depends would leave it permanently broken instead.
+        repack_dir="$(mktemp -d)"
+        dpkg-deb -R "$deb" "$repack_dir"
+        sed -i 's/^Depends: .*/Depends: libstdc++6 (>= 8.3), dkms/' "$repack_dir/DEBIAN/control"
+        grep -qx 'Depends: libstdc++6 (>= 8.3), dkms' "$repack_dir/DEBIAN/control" || {
+            echo "failed to rewrite the Seewo Terminal Manager dependency list" >&2
+            rm -rf "$repack_dir"
+            exit 1
+        }
+        dpkg-deb -b -Zgzip -z1 "$repack_dir" "$deb"
+        rm -rf "$repack_dir"
+    fi
+
     # --no-install-recommends keeps ONLYOFFICE's ttf-mscorefonts-installer
     # (which downloads fonts at install time) out of the build.
     apt-get install -y --no-install-recommends "$deb"
     installed=$((installed + 1))
 done
 
-if [ "$installed" -ne 7 ] || [ "$skipped" -ne 1 ]; then
-    echo "edu-software install expected 7 installed + 1 skipped, got $installed + $skipped" >&2
+if [ "$installed" -ne 8 ]; then
+    echo "edu-software install expected 8 installed, got $installed" >&2
     exit 1
 fi
 
+# Vendor packages switch themselves on at boot.  None of these belong in the
+# boot path of a generic Live image, and each is an unknown variable for the
+# QEMU smoke test, so mask them through /etc/systemd/system: the dpkg-owned
+# unit files stay untouched while every activation path is refused.  希沃管家
+# keeps its /usr/share/applications menu entry, so it still starts on demand
+# from All Apps (its hugo_launcher backend and SeewoServiceAssistant autostart
+# window are the two things being suppressed here).
+mask_unit() {
+    # Drop every activation link first: enable puts them at
+    # /etc/systemd/system/<target>.wants/<unit>, a direct child, so a
+    # */wants glob would never match it.
+    find /etc/systemd/system -mindepth 2 -type l -name "$1" -delete 2>/dev/null || true
+    ln -sfn /dev/null "/etc/systemd/system/$1"
+}
+mask_unit com.seewo.terminalmanager.service
+mask_unit com.cvte.maxhub.alfred.service
+mask_unit disable-seewo-network-card.service
+
+rm -f /etc/xdg/autostart/com.seewo.terminalmanager.desktop
+if [ -d /home ]; then
+    find /home -name 'com.seewo.terminalmanager.desktop' -delete 2>/dev/null || true
+fi
+
 # Vendor packages that only ship menu entries under /opt/apps/... would stay
-# invisible to the desktop menu; export every application entry that has no
-# /usr/share/applications counterpart yet.
+# invisible to the desktop menu; export every application entry that lacks a
+# usable /usr/share/applications counterpart.  希沃管家 ships a zero-byte
+# placeholder there (its postinst materialises the real file under /opt), so a
+# plain existence test would leave an empty menu entry behind.
 for desktop in /opt/apps/*/entries/applications/*.desktop; do
     [ -f "$desktop" ] || continue
+    [ -s "$desktop" ] || continue
     target="/usr/share/applications/$(basename "$desktop")"
-    [ -e "$target" ] || install -m 0644 "$desktop" "$target"
+    if [ ! -s "$target" ]; then
+        install -m 0644 "$desktop" "$target"
+    fi
 done
+
+if [ ! -s /usr/share/applications/com.seewo.terminalmanager.desktop ]; then
+    echo "Seewo Terminal Manager menu entry is missing or empty" >&2
+    exit 1
+fi
+for masked in com.seewo.terminalmanager.service \
+              com.cvte.maxhub.alfred.service \
+              disable-seewo-network-card.service; do
+    [ -L "/etc/systemd/system/$masked" ] || {
+        echo "vendor unit is not masked: $masked" >&2
+        exit 1
+    }
+    [ "$(readlink "/etc/systemd/system/$masked")" = "/dev/null" ] || {
+        echo "vendor unit is masked incorrectly: $masked" >&2
+        exit 1
+    }
+done
+if [ -e /etc/xdg/autostart/com.seewo.terminalmanager.desktop ]; then
+    echo "Seewo Terminal Manager autostart entry survived" >&2
+    exit 1
+fi
 
 # The staged DEBs are build-time inputs only; drop them before the squashfs.
 rm -rf "$EDU_DIR"
+
+# includes.chroot preserves whatever mode the checkout carries, and a checkout
+# from a non-POSIX filesystem can hand the smoke probe over without its bit.
+chmod 755 /usr/local/sbin/winduxedu-smoke-diagnostics

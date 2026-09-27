@@ -65,7 +65,9 @@ python3 scripts/assemble-edu-debs.py
 
 CI 在 staging 阶段执行 `python3 scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages`，把全部 8 个收录 DEB 重组并双层校验进 chroot 树；`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 随后以 `apt-get install -y --no-install-recommends` 逐个安装（安装成功后删除暂存目录，分卷原件不进入 squashfs），并把只自带 `/opt/apps/...` 桌面入口的组件补拷到 `/usr/share/applications/` 保证开始菜单可见。
 
-- **希沃管家（com.seewo.terminalmanager）被有意排除**：其硬依赖 `libstdc++6 (>= 8.3), libstdc++6 (<< 9)` 在 Debian Bookworm（libstdc++6 12.x）上永远无法满足，安装它会中止整个 apt 事务；
-- 其余 7 个包必须安装成功，`scripts/validate-winduxedu-live-image.sh` 会在最终 squashfs 的 `var/lib/dpkg/status` 中逐一断言，并确认希沃管家确实未安装；
+- **8 个收录 DEB 全部安装**，`scripts/validate-winduxedu-live-image.sh` 会在最终 squashfs 的 `var/lib/dpkg/status` 中逐一断言；
+- **希沃管家（com.seewo.terminalmanager）靠重打包装入**：它的 control 声明 `Depends: libstdc++6 (>= 8.3), libstdc++6 (<< 9), dkms`，其中 `<< 9` 在 Debian Bookworm（libstdc++6 12.x）上永远无法满足，会让整个 apt 事务中止。安装钩子在调用 apt 之前用 `dpkg-deb -R` 解包、把 `Depends` 改写为 `libstdc++6 (>= 8.3), dkms`、再 `dpkg-deb -b` 重建。上界是厂商的过度保守约束——包内全部 ELF 的最高需求只有 `GLIBCXX_3.4.22` / `CXXABI_1.3.11`（GCC 5 时代），Bookworm 的 libstdc++6 12 完全向后兼容；重写 control 而不是 `--force-depends` 强装，是为了给后续 apt 运行留下一致的 dpkg 数据库；
+- **厂商的开机副作用在通用 Live 镜像上被关掉**：`com.seewo.terminalmanager.service`、`com.cvte.maxhub.alfred.service`、`disable-seewo-network-card.service` 通过 `/etc/systemd/system` 下指向 `/dev/null` 的软链屏蔽（单元文件本身仍归 dpkg 所有），同时删除 `/etc/xdg/autostart/com.seewo.terminalmanager.desktop` 与 `/home/*/Desktop` 下的副本。三者仍可从开始菜单按需启动；管家的菜单入口原本是 0 字节占位文件，安装钩子会用 postinst 生成在 `/opt/apps/.../entries/applications/` 的真文件覆盖它，校验脚本额外断言该文件非空；
+- **squashfs 用 xz 而非 gzip**：这 8 个包把根文件系统推到 4 GiB 量级，而 ISO9660 level 1/2 单文件上限是 4 GiB − 1，gzip 压缩比不够。恢复 live-build Debian 模式原生的 `xz` 后才有足够余量，构建步骤另外显式断言最终 ISO 小于 4 GiB；
 - `libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；
 - `--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网下载字体，也避免 QQ 的 appindicator 推荐项。
