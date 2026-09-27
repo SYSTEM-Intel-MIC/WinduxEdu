@@ -320,10 +320,16 @@ jobs:
           )"
           fi
           # Build the release asset list only from files that exist so the
-          # release action never sees an unmatched glob.
+          # release action never sees an unmatched glob.  The joined ISO itself
+          # must stay off the list whenever it was split: a Release asset over
+          # 2147483648 bytes is rejected by the API, and the volumes already
+          # carry everything needed to reconstruct it.
           {
             echo "release_files<<RELEASE_FILES_EOF"
-            printf '%s\n' "$ISO" 'WinduxEdu-1.0-amd64-livecd.iso.sha256'
+            if [ "$ISO_BYTES" -lt 2147483648 ]; then
+              printf '%s\n' "$ISO"
+            fi
+            printf '%s\n' 'WinduxEdu-1.0-amd64-livecd.iso.sha256'
             if [ -f WinduxEdu-1.0-amd64-livecd.iso.parts.sha256 ]; then
               printf '%s\n' "${ISO}".??? 'WinduxEdu-1.0-amd64-livecd.iso.parts.sha256'
             fi
@@ -342,8 +348,9 @@ jobs:
           the maximum-compatibility firmware/driver set, Windows-style system tools built
           from the locked package layer, and the collected proprietary teaching applications
           installed from edu-software/: ONLYOFFICE, DingTalk, QQ, WeChat, Seewo EasiNote,
-          EasiCare and EasiCamera. Seewo Terminal Manager (希沃管家) is excluded because its
-          libstdc++6 (<< 9) dependency cannot be satisfied on Debian Bookworm.
+          EasiCare, EasiCamera and Seewo Terminal Manager (希沃管家). The terminal
+          manager's vendor boot units and session autostart are masked, so it only
+          launches on demand from the application menu.
 
           Verify the ISO before writing it to USB:
 
