@@ -39,22 +39,26 @@ for deb in "$EDU_DIR"/*.deb; do
     # Also disable DKMS builds for vendor packages (e.g. hugo_firewall) since
 # the CI runner's Azure kernel (6.17.0-1022-azure) headers are not available
 # in the Debian chroot. The DKMS modules are not needed in the Live image.
-export DKMS_BUILD_ON_INSTALL=no
+# The hugo_firewall package attempts DKMS builds which fail; we repack it
+# to drop the DKMS dependency and postinst script entirely.
+if [ "$package_name" = "hugo_firewall" ]; then
+    repack_dir="$(mktemp -d)"
+    dpkg-deb -R "$deb" "$repack_dir"
+    # Drop DKMS from Depends and clear the postinst to avoid DKMS builds
+    sed -i 's/^Depends: .*/Depends:/' "$repack_dir/DEBIAN/control"
+    > "$repack_dir/DEBIAN/postinst"
+    chmod +x "$repack_dir/DEBIAN/postinst"
+    dpkg-deb -b -Zgzip -z1 "$repack_dir" "$deb"
+    rm -rf "$repack_dir"
+fi
 
-# Ensure HOME is set for vendor postinsts that write to $HOME/.config/mimeapps.list
+    # Ensure HOME is set for vendor postinsts that write to $HOME/.config/mimeapps.list
 # (ONLYOFFICE, 希沃白板). Some postinsts run in contexts that don't inherit
-# environment variables, so set it in /etc/environment and create the directory.
-# Also create a dpkg pre-inst hook to ensure HOME is set for all postinsts.
+# environment variables, so set it in /etc/environment, ensure the directory exists,
+# and force HOME for the apt-get install subprocess.
 echo 'HOME="/root"' >> /etc/environment
 mkdir -p /home/root/.config
-mkdir -p /etc/dpkg/pre-inst.d
-cat > /etc/dpkg/pre-inst.d/set-home <<'EOF'
-#!/bin/sh
-export HOME=/root
-EOF
-chmod +x /etc/dpkg/pre-inst.d/set-home
-export HOME=/root
-apt-get install -y --no-install-recommends "$deb"
+HOME=/root apt-get install -y --no-install-recommends "$deb"
 installed=$((installed + 1))
 done
 
