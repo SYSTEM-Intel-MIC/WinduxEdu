@@ -8,6 +8,7 @@ if [ ! -d "$EDU_DIR" ] || ! ls "$EDU_DIR"/*.deb >/dev/null 2>&1; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
+dpkg --add-architecture i386
 apt-get update
 
 installed=0
