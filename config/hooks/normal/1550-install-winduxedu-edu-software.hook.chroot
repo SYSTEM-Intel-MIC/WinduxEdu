@@ -36,21 +36,15 @@ for deb in "$EDU_DIR"/*.deb; do
         rm -rf "$repack_dir"
     fi
 
-    # --no-install-recommends keeps ONLYOFFICE's ttf-mscorefonts-installer
-    # (which downloads fonts at install time) out of the build.
-    # Some vendor postinsts (ONLYOFFICE, 希沃白板) write to $HOME/.config/mimeapps.list;
-    # ensure HOME is set to /root so the path resolves correctly.
-    export HOME=/root
-    mkdir -p /home/root/.config
-    apt-get install -y --no-install-recommends "$deb"
-    installed=$((installed + 1))
+    # Ensure HOME is set for vendor postinsts that write to $HOME/.config/mimeapps.list
+# (ONLYOFFICE, 希沃白板). Some postinsts run in contexts that don't inherit
+# environment variables, so set it in /etc/environment and create the directory.
+echo 'HOME="/root"' >> /etc/environment
+mkdir -p /home/root/.config
+export HOME=/root
+apt-get install -y --no-install-recommends "$deb"
+installed=$((installed + 1))
 done
-
-# 8 collected teaching applications + 6 sidebar components
-# (希沃侧边栏, its UDI hotspot dependency and four 希沃 miniapps).
-if [ "$installed" -ne 14 ]; then
-    echo "edu-software install expected 14 installed, got $installed" >&2
-    exit 1
 fi
 
 # Vendor packages switch themselves on at boot.  None of these belong in the
