@@ -40,7 +40,9 @@ for deb in "$EDU_DIR"/*.deb; do
     # (which downloads fonts at install time) out of the build.
     # Some vendor postinsts (ONLYOFFICE, 希沃白板) write to $HOME/.config/mimeapps.list;
     # ensure HOME is set to /root so the path resolves correctly.
-    HOME=/root apt-get install -y --no-install-recommends "$deb"
+    export HOME=/root
+    mkdir -p /home/root/.config
+    apt-get install -y --no-install-recommends "$deb"
     installed=$((installed + 1))
 done
 

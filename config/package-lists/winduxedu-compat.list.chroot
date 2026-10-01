@@ -9,6 +9,8 @@
 # DKMS 基础环境（out-of-tree 驱动前置依赖）
 dkms
 build-essential
+# Kernel headers for DKMS builds (matches linux-image-amd64)
+linux-headers-amd64
 
 # CPU 微码
 intel-microcode
