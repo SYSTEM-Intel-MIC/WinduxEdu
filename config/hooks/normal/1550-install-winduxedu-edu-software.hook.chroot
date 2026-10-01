@@ -45,7 +45,6 @@ export HOME=/root
 apt-get install -y --no-install-recommends "$deb"
 installed=$((installed + 1))
 done
-fi
 
 # Vendor packages switch themselves on at boot.  None of these belong in the
 # boot path of a generic Live image, and each is an unknown variable for the
