@@ -36,7 +36,12 @@ for deb in "$EDU_DIR"/*.deb; do
         rm -rf "$repack_dir"
     fi
 
-    # Ensure HOME is set for vendor postinsts that write to $HOME/.config/mimeapps.list
+    # Also disable DKMS builds for vendor packages (e.g. hugo_firewall) since
+# the CI runner's Azure kernel (6.17.0-1022-azure) headers are not available
+# in the Debian chroot. The DKMS modules are not needed in the Live image.
+export DKMS_BUILD_ON_INSTALL=no
+
+# Ensure HOME is set for vendor postinsts that write to $HOME/.config/mimeapps.list
 # (ONLYOFFICE, 希沃白板). Some postinsts run in contexts that don't inherit
 # environment variables, so set it in /etc/environment and create the directory.
 # Also create a dpkg pre-inst hook to ensure HOME is set for all postinsts.
