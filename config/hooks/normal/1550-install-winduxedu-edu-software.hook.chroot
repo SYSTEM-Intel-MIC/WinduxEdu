@@ -11,6 +11,14 @@ export DEBIAN_FRONTEND=noninteractive
 dpkg --add-architecture i386
 apt-get update
 
+# Create dpkg pre-inst hook to force HOME=/root for all postinsts
+mkdir -p /etc/dpkg/pre-inst.d
+cat > /etc/dpkg/pre-inst.d/set-home <<'EOF'
+#!/bin/sh
+export HOME=/root
+EOF
+chmod +x /etc/dpkg/pre-inst.d/set-home
+
 installed=0
 for deb in "$EDU_DIR"/*.deb; do
     package_name="$(dpkg-deb -f "$deb" Package)"
@@ -38,29 +46,29 @@ for deb in "$EDU_DIR"/*.deb; do
     fi
 
     # Also disable DKMS builds for vendor packages (e.g. hugo_firewall) since
-# the CI runner's Azure kernel (6.17.0-1022-azure) headers are not available
-# in the Debian chroot. The DKMS modules are not needed in the Live image.
-# The hugo_firewall package attempts DKMS builds which fail; we repack it
-# to drop the DKMS dependency and postinst script entirely.
-if [ "$package_name" = "hugo_firewall" ]; then
-    repack_dir="$(mktemp -d)"
-    dpkg-deb -R "$deb" "$repack_dir"
-    # Drop DKMS from Depends and clear the postinst to avoid DKMS builds
-    sed -i 's/^Depends: .*/Depends:/' "$repack_dir/DEBIAN/control"
-    > "$repack_dir/DEBIAN/postinst"
-    chmod +x "$repack_dir/DEBIAN/postinst"
-    dpkg-deb -b -Zgzip -z1 "$repack_dir" "$deb"
-    rm -rf "$repack_dir"
-fi
+    # the CI runner's Azure kernel (6.17.0-1022-azure) headers are not available
+    # in the Debian chroot. The DKMS modules are not needed in the Live image.
+    # The hugo_firewall package attempts DKMS builds which fail; we repack it
+    # to drop the DKMS dependency and postinst script entirely.
+    if [ "$package_name" = "hugo_firewall" ]; then
+        repack_dir="$(mktemp -d)"
+        dpkg-deb -R "$deb" "$repack_dir"
+        # Drop DKMS from Depends and clear the postinst to avoid DKMS builds
+        sed -i 's/^Depends: .*/Depends:/' "$repack_dir/DEBIAN/control"
+        > "$repack_dir/DEBIAN/postinst"
+        chmod +x "$repack_dir/DEBIAN/postinst"
+        dpkg-deb -b -Zgzip -z1 "$repack_dir" "$deb"
+        rm -rf "$repack_dir"
+    fi
 
     # Ensure HOME is set for vendor postinsts that write to $HOME/.config/mimeapps.list
-# (ONLYOFFICE, 希沃白板). Some postinsts run in contexts that don't inherit
-# environment variables, so set it in /etc/environment, ensure the directory exists,
-# and force HOME for the apt-get install subprocess.
-echo 'HOME="/root"' >> /etc/environment
-mkdir -p /home/root/.config
-HOME=/root apt-get install -y --no-install-recommends "$deb"
-installed=$((installed + 1))
+    # (ONLYOFFICE, 希沃白板). Some postinsts run in contexts that don't inherit
+    # environment variables, so set it in /etc/environment, ensure the directory exists,
+    # and force HOME for the apt-get install subprocess.
+    echo 'HOME="/root"' >> /etc/environment
+    mkdir -p /home/root/.config
+    HOME=/root apt-get install -y --no-install-recommends "$deb"
+    installed=$((installed + 1))
 done
 
 # Vendor packages switch themselves on at boot.  None of these belong in the
