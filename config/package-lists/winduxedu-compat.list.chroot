@@ -9,8 +9,6 @@
 # DKMS 基础环境（out-of-tree 驱动前置依赖）
 dkms
 build-essential
-# Azure kernel headers for DKMS builds on CI runners (azure kernel 6.x)
-linux-headers-azure
 
 # CPU 微码
 intel-microcode
