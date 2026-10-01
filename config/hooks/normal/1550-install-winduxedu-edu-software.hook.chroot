@@ -38,6 +38,9 @@ for deb in "$EDU_DIR"/*.deb; do
 
     # --no-install-recommends keeps ONLYOFFICE's ttf-mscorefonts-installer
     # (which downloads fonts at install time) out of the build.
+    # Some vendor postinsts (ONLYOFFICE) write to $HOME/.config/mimeapps.list;
+    # ensure HOME is set to /root so the path resolves correctly.
+    export HOME=/root
     apt-get install -y --no-install-recommends "$deb"
     installed=$((installed + 1))
 done
