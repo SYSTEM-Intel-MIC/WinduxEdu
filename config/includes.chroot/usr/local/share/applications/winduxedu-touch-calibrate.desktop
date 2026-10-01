@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Touch Calibration
+Name[zh_CN]=触屏校准
+Comment=Recalibrate the touchscreen mapping
+Comment[zh_CN]=重新校准触摸屏坐标映射
+Exec=/usr/local/bin/winduxedu-touch-calibrate
+Icon=input-touchscreen
+Terminal=false
+Categories=Settings;HardwareSettings;
+StartupNotify=false

@@ -42,8 +42,10 @@ for deb in "$EDU_DIR"/*.deb; do
     installed=$((installed + 1))
 done
 
-if [ "$installed" -ne 8 ]; then
-    echo "edu-software install expected 8 installed, got $installed" >&2
+# 8 collected teaching applications + 6 sidebar components
+# (希沃侧边栏, its UDI hotspot dependency and four 希沃 miniapps).
+if [ "$installed" -ne 14 ]; then
+    echo "edu-software install expected 14 installed, got $installed" >&2
     exit 1
 fi
 
@@ -64,6 +66,32 @@ mask_unit() {
 mask_unit com.seewo.terminalmanager.service
 mask_unit com.cvte.maxhub.alfred.service
 mask_unit disable-seewo-network-card.service
+
+# 希沃侧边栏 (EasiSideBar) and its UDI hotspot dependency are third-party
+# internet software, unrelated to WinduxEdu/SYSTEM-Intel-MIC (see
+# THIRD-PARTY-NOTICES.md), and both ship **enabled by default**: the sidebar
+# registers a *user* systemd unit, UDI a system one whose postinst runs
+# `systemctl enable`.  教育版设置 → 侧边栏 switches the two together through
+# winduxedu-edu-apply, so the image must start from the OFF state.
+if [ ! -f /usr/lib/systemd/user/com.seewo.easisidebar.service ]; then
+    echo "the sidebar user unit was not installed" >&2
+    exit 1
+fi
+mkdir -p /etc/systemd/user
+# Global mask: refused for every account until the setting is switched on.
+find /etc/systemd/user -mindepth 2 -type l -name 'com.seewo.easisidebar.service' -delete 2>/dev/null || true
+ln -sfn /dev/null /etc/systemd/user/com.seewo.easisidebar.service
+mask_unit com.ifpdos.udi.hotspot.service
+
+# EasiSideBar aborts on the first frame when "Noto Sans CJK SC" is missing:
+# its Avalonia host hard-codes that family, the deb declares no Depends, and
+# StandardOutput=null throws the stack trace away, so the unit crash-loops
+# silently.  The font is a hard build requirement, not a nice-to-have.
+dpkg-query -W -f='${Status}' fonts-noto-cjk 2>/dev/null |
+    grep -q '^install ok installed$' || {
+    echo "fonts-noto-cjk is missing; EasiSideBar would crash-loop" >&2
+    exit 1
+}
 
 rm -f /etc/xdg/autostart/com.seewo.terminalmanager.desktop
 if [ -d /home ]; then
@@ -90,7 +118,8 @@ if [ ! -s /usr/share/applications/com.seewo.terminalmanager.desktop ]; then
 fi
 for masked in com.seewo.terminalmanager.service \
               com.cvte.maxhub.alfred.service \
-              disable-seewo-network-card.service; do
+              disable-seewo-network-card.service \
+              com.ifpdos.udi.hotspot.service; do
     [ -L "/etc/systemd/system/$masked" ] || {
         echo "vendor unit is not masked: $masked" >&2
         exit 1
@@ -100,10 +129,192 @@ for masked in com.seewo.terminalmanager.service \
         exit 1
     }
 done
+# The sidebar runs as a *user* unit, so its switch lives in the global
+# /etc/systemd/user namespace instead of /etc/systemd/system.
+[ -L /etc/systemd/user/com.seewo.easisidebar.service ] || {
+    echo "the sidebar user unit is not globally masked" >&2
+    exit 1
+}
+[ "$(readlink /etc/systemd/user/com.seewo.easisidebar.service)" = "/dev/null" ] || {
+    echo "the sidebar user unit is masked incorrectly" >&2
+    exit 1
+}
+if [ -e /etc/systemd/user/default.target.wants/com.seewo.easisidebar.service ] ||
+   [ -e /etc/systemd/user/graphical-session.target.wants/com.seewo.easisidebar.service ]; then
+    echo "the sidebar user unit still has an activation link" >&2
+    exit 1
+fi
 if [ -e /etc/xdg/autostart/com.seewo.terminalmanager.desktop ]; then
     echo "Seewo Terminal Manager autostart entry survived" >&2
     exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# Vendor application adaptations.
+#
+# The collected DEBs are installed unmodified (edu-software/README.md rule 3),
+# so everything below operates on the *installed* system only: entry points,
+# bundled libraries, autostart registrations and MIME defaults.
+# ---------------------------------------------------------------------------
+
+# --- 钉钉 (task: DingTalk never started) ---------------------------------
+# Elevator.sh puts the bundled library directory first on LD_LIBRARY_PATH, so
+# a stale vendor library wins over the system one.  The vendor's own postinst
+# removes exactly the members that are older than a modern glibc (libm.so.6,
+# libgbm*, libstdc++.so.6(.0.25), the GLVND stubs, bundled harfbuzz) -- but
+# only inside `for file in $(ls /home)`, which never executes while the image
+# still has an empty /home.  Bookworm runs glibc 2.36, so all of those removals
+# apply here; without them the system libgtk-3.so.0 dragged in by the bundled
+# web view dies with "GLIBC_2.3x not found".
+DT_RELEASE="$(find /opt/apps/com.alibabainc.dingtalk/files -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n 1)"
+if [ -z "$DT_RELEASE" ]; then
+    echo "DingTalk release directory is missing" >&2
+    exit 1
+fi
+for stale in libm.so.6 \
+             libstdc++.so.6 libstdc++.so.6.0.25 \
+             libgbm.so libgbm.so.1 libgbm.so.1.0.0 \
+             libGLX.so libGLX.so.0 libGLX.so.0.0.0 \
+             libGLdispatch.so libGLdispatch.so.0 libGLdispatch.so.0.0.0 \
+             libffi.so.6.0.4 \
+             libharfbuzz.so libharfbuzz.so.0 libharfbuzz.so.0.20301.0; do
+    rm -f "$DT_RELEASE/$stale"
+done
+# The same skipped loop is what chmod's the Chromium sandbox helper; without
+# the setuid bit the bundled web view refuses to start at all.
+if [ -f "$DT_RELEASE/chrome-sandbox" ]; then
+    chmod 4755 "$DT_RELEASE/chrome-sandbox"
+fi
+for gone in libm.so.6 libstdc++.so.6; do
+    if [ -e "$DT_RELEASE/$gone" ]; then
+        echo "DingTalk still ships an incompatible bundled $gone" >&2
+        exit 1
+    fi
+done
+
+# --- 希沃白板 (task: menu entry pointed at a wrapper shell script) --------
+# The vendor .desktop runs .../files/com.seewo.easinote5.sh; the real binary
+# sits next to it as EasiNote5.  Point the entry at the program, carrying the
+# private library path over into a WinduxEdu-owned launcher only when the
+# vendor wrapper actually exports one.
+EASI_DESKTOP=/usr/share/applications/com.seewo.easinote5.desktop
+if [ -s "$EASI_DESKTOP" ]; then
+    easinote_dir=/opt/apps/com.seewo.easinote5/files
+    easinote_bin="$easinote_dir/EasiNote5"
+    if [ ! -x "$easinote_bin" ]; then
+        easinote_bin=/opt/EasiNote5/EasiNote5
+    fi
+    if [ ! -x "$easinote_bin" ]; then
+        echo "the EasiNote5 binary is missing" >&2
+        exit 1
+    fi
+    easinote_sh="$easinote_dir/com.seewo.easinote5.sh"
+    [ -f "$easinote_sh" ] || easinote_sh=/opt/EasiNote5/com.seewo.easinote5.sh
+    easinote_exec="$easinote_bin"
+    if [ -f "$easinote_sh" ] && grep -q 'LD_LIBRARY_PATH' "$easinote_sh"; then
+        install -Dm755 /dev/stdin /usr/local/bin/winduxedu-easinote5 <<WRAP
+#!/bin/sh
+# WinduxEdu launcher for 希沃白板: the vendor menu entry pointed at a shell
+# wrapper; keep only what that wrapper exported and exec the real program.
+export LD_LIBRARY_PATH="$easinote_bin:\${LD_LIBRARY_PATH:-}"
+exec "$easinote_bin" "\$@"
+WRAP
+        easinote_exec=/usr/local/bin/winduxedu-easinote5
+    fi
+    sed -i "s|^Exec=.*|Exec=$easinote_exec %F|" "$EASI_DESKTOP"
+    grep -q "^Exec=$easinote_exec " "$EASI_DESKTOP" || {
+        echo "failed to repoint the EasiNote5 menu entry" >&2
+        exit 1
+    }
+    if grep -Eq '^Exec=.*\.sh([[:space:]]|$)' "$EASI_DESKTOP"; then
+        echo "the EasiNote5 menu entry still launches a shell script" >&2
+        exit 1
+    fi
+fi
+
+# --- 希沃 upgrade components (task: block vendor self-updates) ------------
+# An in-place upgrade would replace a reviewed, pinned build (see the version
+# rule in edu-software/README.md), so no vendor update path may stay armed.
+for entry in /etc/xdg/autostart/*.desktop; do
+    [ -f "$entry" ] || continue
+    case "$(basename "$entry")" in
+        com.seewo.terminalmanager.desktop | com.cvte.maxhub.alfred.desktop)
+            # handled by the 希沃管家 autostart switch above
+            continue
+            ;;
+    esac
+    grep -Eiq 'seewo|easinote|easicare|easicamera|cvte|maxhub' "$entry" || continue
+    grep -Eiq '^(Name|Name\[zh_CN\]|GenericName|Comment|Exec)=.*(升级|更新|update|upgrade|installer)' "$entry" || continue
+    echo "removing vendor updater autostart: $(basename "$entry")"
+    rm -f "$entry"
+done
+for unit in /usr/lib/systemd/system/*.service /lib/systemd/system/*.service /etc/systemd/system/*.service; do
+    [ -e "$unit" ] || continue
+    base="$(basename "$unit")"
+    case "$base" in
+        com.seewo.terminalmanager.service | com.cvte.maxhub.alfred.service | \
+            disable-seewo-network-card.service | com.ifpdos.udi.hotspot.service)
+            continue
+            ;;
+    esac
+    printf '%s' "$base" | grep -Eiq \
+        '(seewo|easinote|easicare|easicamera|cvte|maxhub).*(update|upgrade)|(update|upgrade).*(seewo|easinote|cvte|maxhub)' || continue
+    echo "masking vendor updater unit: $base"
+    mask_unit "$base"
+done
+# Electron's auto-update feed (app-update.yml) points at the vendor channel.
+for tree in /opt/apps/com.seewo.* /opt/EasiNote5; do
+    [ -d "$tree" ] || continue
+    find "$tree" -maxdepth 5 -type f \
+        \( -iname 'app-update.yml' -o -iname 'latest.yml' -o -iname 'update-info.json' \) \
+        -exec sh -c 'mv -f "$1" "$1.disabled" 2>/dev/null || true' _ {} \; 2>/dev/null || true
+done
+
+# --- ONLYOFFICE (task: default PDF reader) -------------------------------
+# Register ONLYOFFICE as the system-wide handler for application/pdf.  The
+# package ships no MimeType line for PDF in every release, so make sure the
+# desktop entry advertises it before wiring the default.
+oo_desktop=
+for cand in /usr/share/applications/onlyoffice-desktopeditors.desktop \
+    /usr/share/applications/onlyoffice*.desktop; do
+    [ -f "$cand" ] || continue
+    oo_desktop="$cand"
+    break
+done
+[ -n "$oo_desktop" ] || {
+    echo "ONLYOFFICE's desktop entry is missing" >&2
+    exit 1
+}
+oo_entry="$(basename "$oo_desktop")"
+if grep -q '^MimeType=' "$oo_desktop"; then
+    if ! grep -q '^MimeType=.*application/pdf' "$oo_desktop"; then
+        sed -i '0,/^MimeType=/s|^MimeType=|MimeType=application/pdf;|' "$oo_desktop"
+    fi
+else
+    printf 'MimeType=application/pdf;\n' >> "$oo_desktop"
+fi
+grep -q '^MimeType=.*application/pdf' "$oo_desktop" || {
+    echo "ONLYOFFICE does not advertise application/pdf" >&2
+    exit 1
+}
+mkdir -p /etc/xdg
+MIMEAPPS=/etc/xdg/mimeapps.list
+if [ -f "$MIMEAPPS" ]; then
+    # Drop any competing default and re-add ours under [Default Applications].
+    grep -v '^application/pdf=' "$MIMEAPPS" > "$MIMEAPPS.tmp" || true
+    if grep -q '^\[Default Applications\]' "$MIMEAPPS.tmp"; then
+        sed -i "/^\[Default Applications\]/a application/pdf=$oo_entry" "$MIMEAPPS.tmp"
+    else
+        printf '\n[Default Applications]\napplication/pdf=%s\n' "$oo_entry" >> "$MIMEAPPS.tmp"
+    fi
+    mv -f "$MIMEAPPS.tmp" "$MIMEAPPS"
+else
+    printf '[Default Applications]\napplication/pdf=%s\n' "$oo_entry" > "$MIMEAPPS"
+fi
+grep -qx "application/pdf=$oo_entry" "$MIMEAPPS" || {
+    echo "ONLYOFFICE is not the default application/pdf handler" >&2
+    exit 1
+}
 
 # The staged DEBs are build-time inputs only; drop them before the squashfs.
 rm -rf "$EDU_DIR"

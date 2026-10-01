@@ -111,7 +111,7 @@ jobs:
           sudo chown -R "$USER:$USER" artifacts
           ( cd artifacts/packages && sha256sum *.deb > SHA256SUMS )
           python3 scripts/write-winduxedu-build-manifest.py
-          test -f artifacts/packages/elevende_3.5.1_amd64.deb
+          test -f artifacts/packages/elevende_3.6_amd64.deb
           test -f artifacts/packages/winduxedu-store_2.3.0+winduxedu2_amd64.deb
           test -f artifacts/packages/SHA256SUMS
           ( cd artifacts/packages && sha256sum -c SHA256SUMS )
@@ -135,8 +135,10 @@ jobs:
           # opt/winduxedu/ directories root-owned via install -d.
           sudo python3 scripts/assemble-edu-debs.py \
             --output config/includes.chroot/opt/winduxedu/edu-packages
+          # 8 collected teaching applications + 6 sidebar components
+          # (希沃侧边栏, its UDI hotspot dependency and four 希沃 miniapps).
           test "$(find config/includes.chroot/opt/winduxedu/edu-packages \
-            -maxdepth 1 -name '*.deb' -type f | wc -l)" -eq 8
+            -maxdepth 1 -name '*.deb' -type f | wc -l)" -eq 14
           ls -lh config/includes.chroot/opt/winduxedu/edu-packages
           # The proprietary source parts are only inputs to this staging step;
           # freeing ~1.7 GB gives the chroot/squashfs phases enough headroom.

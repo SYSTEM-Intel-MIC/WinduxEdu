@@ -1,0 +1,89 @@
+#!/bin/sh
+# WinduxEdu Seewo toolbar pinning helper (started from the patched
+# elevende-session).
+#
+# On UOS the 希沃 floating toolbar stays above every window; under ElevenDE it
+# was subject to ordinary stacking, so maximised teaching windows covered it
+# and the "restore the UOS experience" affordance disappeared.  This helper
+# re-applies _NET_WM_STATE_ABOVE to Seewo's floating panels.
+#
+# Only floating panels are pinned: a pinned *main* window (the whiteboard
+# itself) would be wrong, so a window qualifies only when its type is
+# DOCK/UTILITY/TOOLBAR/SPLASH or it occupies a minority of the screen.
+set -u
+
+log() { echo "seewo-toolbar: $*"; }
+
+command -v wmctrl >/dev/null 2>&1 || { log "wmctrl is missing"; exit 0; }
+command -v xrandr >/dev/null 2>&1 || { log "xrandr is missing"; exit 0; }
+
+is_seewo_window() {
+    printf '%s' "$1" | grep -Eiq \
+        'seewo|easinote|easi5|maxhub|cvte|swen|easicare|easicamera|showboard'
+}
+
+window_types() {
+    xprop -id "$1" _NET_WM_WINDOW_TYPE 2>/dev/null
+}
+
+is_floating_type() {
+    window_types "$1" | grep -Eiq \
+        '_NET_WM_WINDOW_TYPE_(DOCK|UTILITY|TOOLBAR|SPLASH|MENU|NOTIFICATION)'
+}
+
+screen_size() {
+    # "WIDTH HEIGHT" of the first connected output.
+    xrandr --query 2>/dev/null |
+        sed -n 's/^[^ ]* connected.* \([0-9][0-9]*\)x\([0-9][0-9]*\)+.*/\1 \2/p' |
+        head -n 1
+}
+
+already_above() {
+    xprop -id "$1" _NET_WM_STATE 2>/dev/null | grep -q '_NET_WM_STATE_ABOVE'
+}
+
+pin_once() {
+    sizes="$(screen_size)"
+    set -- $sizes
+    [ -n "${1:-}" ] || return 0
+    max_w="$1"
+    max_h="$2"
+
+    # wmctrl separates its columns with tabs (and -x appends WM_CLASS in front
+    # of the title); normalise to "id<TAB>width<TAB>height<TAB>class+title".
+    wmctrl -lG -x 2>/dev/null |
+        awk -v maxw="$max_w" -v maxh="$max_h" '
+            $1 ~ /^0x/ {
+                rest = ""
+                for (i = 7; i <= NF; i++) rest = rest " " $i
+                print $1 "\t" $5 "\t" $6 "\t" rest
+            }' |
+        while IFS='	' read -r id w h rest; do
+            [ -n "$id" ] || continue
+            is_seewo_window "$rest" || continue
+            floating=0
+            is_floating_type "$id" && floating=1
+            if [ "$floating" -eq 0 ]; then
+                case "$w$h" in
+                    *[!0-9]*) continue ;;
+                esac
+                [ "$max_w" -gt 0 ] && [ "$max_h" -gt 0 ] || continue
+                # Less than 60% of the screen in either direction = a panel.
+                [ "$((w * 100))" -lt "$((max_w * 60))" ] ||
+                    [ "$((h * 100))" -lt "$((max_h * 60))" ] || continue
+            fi
+            already_above "$id" && continue
+            if wmctrl -i -r "$id" -b add,above >/dev/null 2>&1; then
+                log "pinned $id ($rest) above other windows"
+            fi
+        done
+}
+
+log "watching for Seewo floating panels on ${DISPLAY:-unset}"
+while sleep 2; do
+    if ! xrandr --query >/dev/null 2>&1; then
+        log "display went away; exiting"
+        exit 0
+    fi
+    pin_once
+done

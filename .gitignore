@@ -37,3 +37,5 @@ scripts/__pycache__/
 /config/archives/winduxedu.list.*
 /config/bootloaders/isolinux/*.c32
 /config/bootloaders/isolinux/isolinux.bin
+/sidebar.7z
+__pycache__/

@@ -90,7 +90,7 @@ apt-get install -y --no-install-recommends \
     python3 python3-pil python3-gi gir1.2-gtk-3.0 \
     udisks2 dosfstools ntfs-3g mtools
 
-log "acquiring published ElevenDE 3.5.1 from the locked source cache"
+log "acquiring published ElevenDE 3.6 from the locked source cache"
 ELEV_SRC="$WORK/ElevenDE"
 source_locked elevende "$ELEV_SRC"
 [ -f "$ELEV_SRC/build-deb.sh" ] || die "ElevenDE source package is incomplete"
@@ -99,6 +99,8 @@ python3 "$ROOT/scripts/patch-elevende-desktop-launcher.py" "$ELEV_SRC/shell/main
 python3 "$ROOT/scripts/patch-elevende-shell-display.py" "$ELEV_SRC/shell/main.c"
 python3 "$ROOT/scripts/patch-elevende-taskbar-filter.py" "$ELEV_SRC/shell/main.c"
 python3 "$ROOT/scripts/patch-elevende-settings-display.py" "$ELEV_SRC/apps/settings/main.cpp"
+python3 "$ROOT/scripts/patch-elevende-settings-education.py" \
+    "$ELEV_SRC/apps/settings" "$ELEV_SRC/assets/icons"
 python3 "$ROOT/scripts/patch-elevende-winduxedu-component-icons.py" "$ELEV_SRC/shell/main.c"
 python3 "$ROOT/scripts/patch-elevende-winduxedu-menu.py" "$ELEV_SRC/shell/main.c"
 python3 "$ROOT/scripts/patch-elevende-winduxedu-actions.py" "$ELEV_SRC/shell/main.c" "$ELEV_SRC/wm/sas-config.json"
@@ -117,11 +119,13 @@ cp -a "$ROOT/packages/elevende/icons" "$ELEV_SRC/assets/icons-winduxedu-overlay"
 sed -i 's/x11 xft fontconfig freetype2 libpng/x11 xft fontconfig freetype2 libpng xrandr/g' "$ELEV_SRC/shell/Makefile"
 sed -i 's/$(LOCK_LIBS) -lcrypt/$(LOCK_LIBS) -lcrypt -lpam -lXrandr/' "$ELEV_SRC/shell/Makefile"
 
-log "building ElevenDE 3.5.1 from locked source revision"
+log "building ElevenDE 3.6 from locked source revision"
 (
     cd "$ELEV_SRC"
     BUILD_DIR="$WORK/elevende-build" bash ./build-deb.sh
-    cp elevende_3.5.1_amd64.deb "$PKGS/"
+    built_elevende="$(compgen -G 'elevende_*_amd64.deb' | head -n 1 || true)"
+    [ -n "$built_elevende" ] || die "ElevenDE build produced no elevende package"
+    cp "$built_elevende" "$PKGS/"
 )
 
 log "building LinuxPCManager package"

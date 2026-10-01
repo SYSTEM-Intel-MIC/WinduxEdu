@@ -8,7 +8,7 @@ Copyright © 2026 **SYSTEM-Intel-MIC**。除文件另有说明外，WinduxEdu �
 
 | 组件 | 固定来源 | 许可证 | WinduxEdu 1.0 分发与启用边界 |
 |---|---|---|---|
-| ElevenDE 3.5.1 | `b4b97ca4fa0ac46235dd8a20b508ff5c9bdf1026` [1] | GPL-3.0-or-later（ElevenDE 自有部分） | 从公开固定提交构建。SAS、Explorer 与 runbox 的原始上游部分保留独立许可证；ElevenDE 对 Explorer 的重大修改和集成按其 GPL 声明处理。 |
+| ElevenDE 3.6 | `c3221d9eaeeca10d989ae1ae596d9cf82d9508e9` [1] | GPL-3.0-or-later（ElevenDE 自有部分） | 从公开固定提交构建。SAS、Explorer 与 runbox 的原始上游部分保留独立许可证；ElevenDE 对 Explorer 的重大修改和集成按其 GPL 声明处理。 |
 | LinuxPCManager、linux-regedit | 见 [`packages/sources.lock.tsv`](packages/sources.lock.tsv) | 上游当前未提供可执行的明确许可证 | 不重新标注为 GPL；保留来源和固定提交。单独再分发前应取得明确授权。 |
 | Device Manager | 见 [`packages/sources.lock.tsv`](packages/sources.lock.tsv) | 上游当前未提供可执行的明确许可证 | 独立 `winduxedu-device-manager` DEB；保留来源和固定提交，不重新标注为 GPL。 |
 | WinduxEdu Store | `264b3821b1f180201226e02003fa48d81ffee214` [2] | GPL-3.0-only | 独立 `winduxedu-store` DEB；仅使用系统 APT/polkit 路径，未内置第三方源或凭据。 |
@@ -24,11 +24,12 @@ Copyright © 2026 **SYSTEM-Intel-MIC**。除文件另有说明外，WinduxEdu �
 
 ## 非开源软件收录区（edu-software/）
 
-[`edu-software/`](edu-software/) 目录收录钉钉、OnlyOffice、希沃（Seewo）系列、QQ、WeChat 等**专有（非开源）二进制发行包**，按原维护者的手动分类以独立文件夹存放。该目录：
+[`edu-software/`](edu-software/) 目录收录钉钉、OnlyOffice、希沃（Seewo）系列、QQ、WeChat 等**专有（非开源）二进制发行包**，按原维护者的手动分类以独立文件夹存放，后续新增的希沃侧边栏组件单列 `sidebar/`。该目录：
 
 - **不属于开源软件**，不适用本仓库的 GPL-3.0 许可证，也不被任何第三方开源许可证覆盖；
 - **与 SYSTEM-Intel-MIC 无关**：本组织非其开发者、非其分发渠道维护者、不拥有其商标，不对其功能与安全性作任何保证或背书；
 - **仅作收录**：文件按原样收录，不修改、不重打包、不更换版本；`Package` / `Version` / SHA-256 固定记录于 [`edu-software/DEB-INVENTORY.tsv`](edu-software/DEB-INVENTORY.tsv)，构建使用前必须校验。文件以 50 MiB 分卷存储（逐卷 SHA-256 见 [`edu-software/PARTS-INDEX.tsv`](edu-software/PARTS-INDEX.tsv)，重组脚本 [`scripts/assemble-edu-debs.py`](scripts/assemble-edu-debs.py)）；
+- **希沃侧边栏（EasiSideBar）与 UDI 热点服务**（`edu-software/sidebar/`）同样是第三方互联网软件、非开源，与 WinduxEdu / SYSTEM-Intel-MIC 无关：镜像默认**关闭**二者的开机自启，只在「设置 → 教育版设置」中手动开启；其界面硬依赖的 `fonts-noto-cjk` 由 Debian `main` 官方源提供；
 - 具体声明与清单见 [`edu-software/README.md`](edu-software/README.md)。
 
 ## ElevenDE 上游边界
@@ -49,7 +50,7 @@ WinduxEdu 自有源码、配置和构建脚本在本仓库公开。`packages/sou
 
 ## 参考
 
-[1]: https://github.com/SYSTEM-Intel-MIC/ElevenDE/tree/b4b97ca4fa0ac46235dd8a20b508ff5c9bdf1026 "ElevenDE 3.5.1 fixed source"
+[1]: https://github.com/SYSTEM-Intel-MIC/ElevenDE/tree/c3221d9eaeeca10d989ae1ae596d9cf82d9508e9 "ElevenDE 3.6 fixed source"
 [2]: https://github.com/SYSTEM-Intel-MIC/linux-store "linux-store"
 [3]: https://github.com/BobbyChengCN0518/Lindows-Troubleshooting "WinduxEdu Troubleshooting"
 [4]: https://github.com/xusk1234/Linux-Sticky-keys "Linux Sticky Keys"

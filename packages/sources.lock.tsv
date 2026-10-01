@@ -1,6 +1,6 @@
 # WinduxEdu 1.0 source lock — package recipes clone only these fixed revisions into a disposable source cache.
 # id	url	revision	license_status	integration_role
-elevende	https://github.com/SYSTEM-Intel-MIC/ElevenDE.git	b4b97ca4fa0ac46235dd8a20b508ff5c9bdf1026	GPL-3.0-or-later	core-desktop
+elevende	https://github.com/SYSTEM-Intel-MIC/ElevenDE.git	c3221d9eaeeca10d989ae1ae596d9cf82d9508e9	GPL-3.0-or-later	core-desktop
 linux-pcmanager	https://github.com/SYSTEM-Intel-MIC/LinuxPCManager.git	4a744338aff580d4c7260bb00cbebfe8521bcf80	upstream-license-unavailable	component
 regedit	https://github.com/heyManNice/regedit.git	0e3de3dcfbf1aca0fbc8dda2be307a1224c0f04f	upstream-license-unavailable	component
 device-manager	https://github.com/daimile2/Device-Manager-But-Linux.git	e7e8238cc72a08ce0302e4ffbd529838f49fbed4	upstream-license-unavailable	component

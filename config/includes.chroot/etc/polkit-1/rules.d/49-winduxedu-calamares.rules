@@ -10,7 +10,9 @@ polkit.addRule(function(action, subject) {
     // logind seat, so GUI-agent-based AUTH_SELF can fail silently after install.
     // Permit only the Calamares-created sudo user to run this one fixed-function
     // dispatcher.  The dispatcher has no arbitrary-command branch: it accepts
-    // exactly suspend, poweroff or reboot.
+    // exactly suspend, poweroff, reboot, edu-set <known key> <0|1> and
+    // edu-uninstall <allow-listed 希沃 package>, each of which re-validates its
+    // own operands inside a fixed helper.
     // All other actions and users retain the policy defaults (auth_admin).
     if (subject.isInGroup("sudo") &&
         action.id == "im.system-intel-mic.winduxedu.privileged-action") {

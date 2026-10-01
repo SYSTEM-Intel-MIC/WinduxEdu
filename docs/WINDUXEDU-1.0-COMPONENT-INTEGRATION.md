@@ -34,7 +34,7 @@ WinduxEdu 不安装 LightDM。`winduxedu-elevende-display.service` 通过 Xorg/x
 
 | 组件 | 来源锁 / 许可证 | WinduxEdu DEB 与受控修改 | ElevenDE 入口和安全边界 |
 | --- | --- | --- | --- |
-| ElevenDE 3.5.1 | `b4b97ca` / GPL-3.0-or-later | 仅补丁构建副本：桌面启动、显示重排、图标、会话。 | 核心 Shell 与原生登录；不修改上游仓库。 |
+| ElevenDE 3.6 | `c3221d9e` / GPL-3.0-or-later | 仅补丁构建副本：桌面启动、显示重排、图标、会话。 | 核心 Shell 与原生登录；不修改上游仓库。 |
 | Linux PC Manager | `4a744338` / 上游未提供许可证文件 | `linux-pcmanager` Python package。 | 控制面板图标；许可证状态显式保留，不被 WinduxEdu GPL 覆盖。 |
 | Registry Editor | `0e3de3dc` / 上游未提供许可证文件 | `linux-regedit` Meson/C package；提供 `regedit` 命令别名。 | Windows 键图标。 |
 | Device Manager | `e7e8238c` / 上游声明 | `winduxedu-device-manager` Go package；使用 WinduxEdu 固定 `go.sum` 和 `-mod=readonly`。 | 设备图标。 |

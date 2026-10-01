@@ -1,0 +1,72 @@
+#!/bin/sh
+# WinduxEdu touchscreen calibration entry point.
+#
+# xinput_calibrator only *measures*: it prints (or writes) an xorg.conf
+# snippet that no package on this image ever loads, which is why the stock
+# calibration tool "did nothing".  This wrapper takes the measurement, converts
+# it into the coordinate-transform matrix the session helper applies with
+# xinput, and stores it in the user configuration.
+set -u
+
+CONF="${XDG_CONFIG_HOME:-${HOME:-}/.config}/winduxedu/edu-settings.conf"
+TOOL=/usr/local/bin/winduxedu-edu-settings
+TMP="$(mktemp /tmp/winduxedu-calibration.XXXXXX)"
+trap 'rm -f "$TMP" "$TMP.out"' EXIT
+
+say() {
+    if command -v xmessage >/dev/null 2>&1; then
+        xmessage -center "触屏校准: $*" 2>/dev/null || printf '触屏校准: %s\n' "$*"
+    else
+        printf '触屏校准: %s\n' "$*"
+    fi
+}
+
+if ! command -v xinput_calibrator >/dev/null 2>&1; then
+    say "未安装 xinput-calibrator"
+    exit 1
+fi
+
+# Run the wizard and keep everything it reports (stdout plus the optional
+# --output-filename report).
+xinput_calibrator --output-filename "$TMP.out" >"$TMP" 2>&1
+rc=$?
+cat "$TMP.out" >>"$TMP" 2>/dev/null || true
+
+nine="$(sed -n 's/.*\(CoordinateTransformationMatrix\|CalibrationMatrix\|Calibration Matrix\)"[[:space:]]*"\([^"]*\)".*/\2/p' "$TMP" | tail -n 1)"
+four="$(sed -n 's/.*Option[[:space:]]*"Calibration"[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP" | tail -n 1)"
+
+matrix=""
+if [ -n "$nine" ] && printf '%s' "$nine" | grep -Eq \
+    '^-?[0-9]+(\.[0-9]+)?( +-?[0-9]+(\.[0-9]+)?){8}$'; then
+    matrix="$nine"
+elif [ -n "$four" ]; then
+    # Calibration "x1 x2 y1 y2" describes the raw axis range that must map to
+    # the full output; fold it into an affine transform.
+    set -- $four
+    [ "$#" -eq 4 ] || set -- ""
+    if [ "$#" -eq 4 ] && [ "$1" != "$2" ] && [ "$3" != "$4" ]; then
+        sx="$(awk -v a="$1" -v b="$2" 'BEGIN{printf "%.8f", 1/(b-a)}')"
+        tx="$(awk -v a="$1" -v b="$2" 'BEGIN{printf "%.8f", -a/(b-a)}')"
+        sy="$(awk -v a="$3" -v b="$4" 'BEGIN{printf "%.8f", 1/(b-a)}')"
+        ty="$(awk -v a="$3" -v b="$4" 'BEGIN{printf "%.8f", -a/(b-a)}')"
+        matrix="$sx 0 $tx 0 $sy $ty 0 0 1"
+    fi
+fi
+
+if [ -z "$matrix" ]; then
+    # Nothing parseable: leave any previous calibration untouched.
+    if [ "$rc" -ne 0 ]; then
+        say "校准未完成（退出码 $rc）。若该设备由 libinput 驱动，可改用『教育版设置』中的触屏开关。"
+    else
+        say "校准结果无法解析，原有校准保持不变。"
+    fi
+    exit 1
+fi
+
+if "$TOOL" set touch-calibration "$matrix"; then
+    say "校准已保存：$matrix（10 秒内由会话助手生效）"
+else
+    say "校准结果写入失败"
+    exit 1
+fi
+exit 0

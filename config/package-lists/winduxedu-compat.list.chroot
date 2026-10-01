@@ -32,6 +32,12 @@ mesa-utils
 mesa-va-drivers
 intel-media-va-driver
 
+# 网卡：cfg80211 依赖 regulatory.db 才能注册射频规则，缺失时无线网卡会
+# 注册成功却始终扫描不到任何热点；ethtool/iw 用于现场诊断有线协商与无线链路。
+wireless-regdb
+iw
+ethtool
+
 # 蓝牙
 bluez
 bluez-tools
@@ -40,13 +46,27 @@ libspa-0.2-bluetooth
 # 音频：PipeWire（Debian 默认音频栈）
 pipewire
 pipewire-pulse
+# 原生 ALSA 应用（希沃白板、钉钉、ONLYOFFICE 等）不经过 PulseAudio 协议，
+# 由 pipewire-alsa 提供 ALSA 插件接入同一音频栈，避免第二个声音服务。
+pipewire-alsa
 wireplumber
+# UCM 配置（alsa-utils 不依赖它）：一体机板载声卡与 USB 音频的通道路由。
+alsa-ucm-conf
 
 # 输入：libinput 统一键盘/鼠标/触摸屏
 xserver-xorg-input-libinput
 libinput-tools
 evtest
 xinput-calibrator
+# xinput 是会话内触屏修复/校准的实际执行工具（启用设备、重置坐标变换矩阵、
+# 映射到输出）。xinput-calibrator 只提供图形向导，本身不写入运行时属性。
+xinput
+
+# 无障碍与屏幕键盘（教育版设置：屏幕键盘开关，登录界面同样生效）
+# matchbox-keyboard 见 winduxedu-education.list.chroot；此处提供其判定输入焦点
+# 所依赖的 AT-SPI2 运行时（Debian 包 at-spi2-core + python3-pyatspi）。
+at-spi2-core
+python3-pyatspi
 
 # 摄像头（UVC）
 v4l-utils

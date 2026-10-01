@@ -1,20 +1,27 @@
 #!/bin/sh
 # Fixed-function privileged dispatcher for WinduxEdu desktop actions.
-# It deliberately accepts no command paths, no shell fragments and no extra
-# arguments.  PolicyKit authorizes this one program; every branch remains
-# explicitly allow-listed.
+# It deliberately accepts no command paths, no shell fragments and no free
+# choice of program: PolicyKit authorizes this one binary and every branch
+# below re-validates its own operands, so an allow-listed verb is the only
+# thing a caller can influence.
 set -eu
 
-[ "$#" -eq 1 ] || exit 64
+[ "$#" -ge 1 ] || exit 64
 case "$1" in
-    suspend)
-        exec /usr/bin/systemctl --no-wall suspend
+    suspend | poweroff | reboot)
+        [ "$#" -eq 1 ] || exit 64
+        exec /usr/bin/systemctl --no-wall "$1"
         ;;
-    poweroff)
-        exec /usr/bin/systemctl --no-wall poweroff
+    edu-set)
+        # 教育版设置: switch one system-level key (seewo-autostart,
+        # sidebar-autostart) to 0/1.  The applier re-validates both operands.
+        [ "$#" -eq 3 ] || exit 64
+        exec /usr/local/libexec/winduxedu-edu-apply "$2" "$3"
         ;;
-    reboot)
-        exec /usr/bin/systemctl --no-wall reboot
+    edu-uninstall)
+        # 教育版设置: remove one allow-listed 希沃 application package.
+        [ "$#" -eq 2 ] || exit 64
+        exec /usr/local/libexec/winduxedu-edu-uninstall "$2"
         ;;
     *)
         exit 64

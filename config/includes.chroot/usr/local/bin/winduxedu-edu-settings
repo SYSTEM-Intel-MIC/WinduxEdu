@@ -1,0 +1,147 @@
+#!/bin/sh
+# WinduxEdu 教育版设置 helper (called by the ElevenDE Settings app page
+# "教育版设置" and usable by hand from a terminal).
+#
+#   winduxedu-edu-settings get <key>            effective value (read only)
+#   winduxedu-edu-settings set <key> <value>    write; escalates system keys
+#   winduxedu-edu-settings status               every key as key=value
+#   winduxedu-edu-settings list-seewo           installed 希沃 packages
+#   winduxedu-edu-settings uninstall-seewo <p>  ask for one-click removal
+#
+# Per-user keys live in ~/.config/winduxedu/edu-settings.conf, system keys in
+# /etc/winduxedu/edu-settings.conf (defaults shipped by the image).  The
+# system keys are applied by /usr/local/libexec/winduxedu-privileged-action,
+# which only ever executes fixed, allow-listed operations.
+set -eu
+
+PRIV=/usr/local/libexec/winduxedu-privileged-action
+USER_CONF="${XDG_CONFIG_HOME:-${HOME:-}/.config}/winduxedu/edu-settings.conf"
+SYS_CONF=/etc/winduxedu/edu-settings.conf
+
+USER_KEYS="screen-keyboard touch-calibration"
+SYS_KEYS="seewo-autostart sidebar-autostart"
+
+die() { echo "winduxedu-edu-settings: $*" >&2; exit "${2:-1}"; }
+
+is_user_key() {
+    case " $USER_KEYS " in *" $1 "*) return 0 ;; esac
+    return 1
+}
+
+is_sys_key() {
+    case " $SYS_KEYS " in *" $1 "*) return 0 ;; esac
+    return 1
+}
+
+default_for() {
+    case "$1" in
+        touch-calibration) echo "1 0 0 0 1 0 0 0 1" ;;
+        *) echo "0" ;;
+    esac
+}
+
+valid_value() {
+    key="$1" value="$2"
+    case "$key" in
+        touch-calibration)
+            printf '%s' "$value" |
+                grep -Eq '^-?[0-9]+(\.[0-9]+)?( +-?[0-9]+(\.[0-9]+)?){8}$'
+            ;;
+        *)
+            case "$value" in
+                0|1) return 0 ;;
+                *) return 1 ;;
+            esac
+            ;;
+    esac
+}
+
+read_key() {
+    key="$1" value=""
+    value="$(sed -n "s/^${key}=//p" "$USER_CONF" 2>/dev/null | tail -n 1)" || true
+    if [ -z "$value" ]; then
+        value="$(sed -n "s/^${key}=//p" "$SYS_CONF" 2>/dev/null | tail -n 1)" || true
+    fi
+    if [ -z "$value" ]; then
+        value="$(default_for "$key")"
+    fi
+    printf '%s\n' "$value"
+}
+
+write_user_key() {
+    key="$1" value="$2"
+    dir="$(dirname "$USER_CONF")"
+    mkdir -p "$dir"
+    tmp="$USER_CONF.tmp.$$"
+    if [ -f "$USER_CONF" ]; then
+        grep -v "^${key}=" "$USER_CONF" >"$tmp" || true
+    else
+        : >"$tmp"
+    fi
+    printf '%s=%s\n' "$key" "$value" >>"$tmp"
+    mv -f "$tmp" "$USER_CONF"
+}
+
+seewo_label() {
+    case "$1" in
+        com.seewo.easinote5) echo "希沃白板5" ;;
+        com.seewo.terminalmanager) echo "希沃管家" ;;
+        com.seewo.easicare) echo "班级优化大师" ;;
+        com.seewo.easicamera) echo "视频展台" ;;
+        com.seewo.easisidebar) echo "希沃侧边栏" ;;
+        com.seewo.easiminiapps.desktopscreenshot) echo "桌面截屏" ;;
+        com.seewo.easiminiapps.desktoptimer) echo "桌面计时器" ;;
+        com.seewo.easiminiapps.luckyrandom) echo "随机抽选" ;;
+        com.seewo.easiminiapps.rollcall) echo "人数统计" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+installed_seewo() {
+    dpkg-query -W -f='${Package}\n' 2>/dev/null | sed -n '/^com\.seewo\./p' |
+        while read -r pkg; do
+            [ -n "$pkg" ] || continue
+            printf '%s\t%s\n' "$pkg" "$(seewo_label "$pkg")"
+        done
+}
+
+cmd="${1:-}"
+case "$cmd" in
+    get)
+        [ "$#" -eq 2 ] || die "usage: get <key>" 64
+        is_user_key "$2" || is_sys_key "$2" || die "unknown key: $2" 64
+        read_key "$2"
+        ;;
+    status)
+        [ "$#" -eq 1 ] || die "usage: status" 64
+        for key in $USER_KEYS $SYS_KEYS; do
+            printf '%s=%s\n' "$key" "$(read_key "$key")"
+        done
+        ;;
+    set)
+        [ "$#" -eq 3 ] || die "usage: set <key> <value>" 64
+        key="$2" value="$3"
+        is_user_key "$key" || is_sys_key "$key" || die "unknown key: $key" 64
+        valid_value "$key" "$value" || die "invalid value for $key: $value" 64
+        if is_user_key "$key"; then
+            write_user_key "$key" "$value"
+        else
+            # System keys are applied as root through the fixed dispatcher.
+            exec pkexec "$PRIV" edu-set "$key" "$value"
+        fi
+        ;;
+    list-seewo)
+        [ "$#" -eq 1 ] || die "usage: list-seewo" 64
+        installed_seewo
+        ;;
+    uninstall-seewo)
+        [ "$#" -eq 2 ] || die "usage: uninstall-seewo <package>" 64
+        pkg="$2"
+        installed_seewo | cut -f1 | grep -Fxq "$pkg" ||
+            die "$pkg is not an installed 希沃 package" 64
+        exec pkexec "$PRIV" edu-uninstall "$pkg"
+        ;;
+    *)
+        die "usage: get|set|status|list-seewo|uninstall-seewo [...]" 64
+        ;;
+esac

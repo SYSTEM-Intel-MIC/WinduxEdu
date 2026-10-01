@@ -88,6 +88,10 @@ dosfstools
 ntfs-3g
 mtools
 parted
+# grub2-common carries /usr/sbin/update-grub and /usr/sbin/grub-install.
+# grub-common alone only ships grub-mkconfig, so an image without it cannot
+# generate grub.cfg: Calamares' UEFI install failed at exactly that step.
+grub2-common
 grub-common
 grub-pc-bin
 grub-efi-amd64-bin

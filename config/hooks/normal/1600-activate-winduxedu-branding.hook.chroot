@@ -129,6 +129,30 @@ chmod 0755 /usr/share/applications/winduxedu-installer.desktop 2>/dev/null || tr
 printf 'WinduxEdu 1.0 \\n \\l\n' > /etc/issue
 printf 'WinduxEdu 1.0\n' > /etc/issue.net
 
+# GRUB needs /etc/default/grub as its defaults source.  Debian Bookworm only
+# ships that file from grub-cloud-amd64, so a bare bookworm rootfs (and thus
+# this image) has none: grub-mkconfig ran with an empty config and Calamares'
+# UEFI step had no defaults to build grub.cfg from.  Seed the standard
+# defaults here; the block below still appends the WinduxEdu identity and
+# theme, and the last assignment wins when the file is sourced.
+[ -x /usr/sbin/update-grub ] || {
+    echo "update-grub is missing; grub2-common is not in the package list" >&2
+    exit 1
+}
+[ -x /usr/sbin/grub-install ] || {
+    echo "grub-install is missing; grub2-common is not in the package list" >&2
+    exit 1
+}
+if [ ! -f /etc/default/grub ]; then
+    cat > /etc/default/grub <<'EOF'
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=5
+GRUB_TIMEOUT_STYLE=menu
+GRUB_CMDLINE_LINUX_DEFAULT="quiet"
+GRUB_CMDLINE_LINUX=""
+EOF
+fi
+
 # GRUB themes are read from /etc/default/grub by grub-mkconfig.  Only append
 # the WinduxEdu theme assignment after both theme assets have been staged.  This
 # prevents a missing file from becoming a boot-time GRUB theme warning.

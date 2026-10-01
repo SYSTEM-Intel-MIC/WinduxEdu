@@ -2,7 +2,7 @@
 
 ## 目标与范围
 
-WinduxEdu 1.0 是面向 AMD64 的 Debian Bookworm 轻量级 X11 Live 发行版。它以 ElevenDE 3.5.1 为默认桌面会话，提供 Windows 风格桌面、系统工具、中文输入和图形化安装入口，同时避免引入 GNOME、KDE 或完整桌面元包。镜像标识、`/etc/os-release`、启动菜单、Calamares 品牌、桌面与已安装系统的 GRUB 主题统一为 **WinduxEdu 1.0**。
+WinduxEdu 1.0 是面向 AMD64 的 Debian Bookworm 轻量级 X11 Live 发行版。它以 ElevenDE 3.6 为默认桌面会话，提供 Windows 风格桌面、系统工具、中文输入和图形化安装入口，同时避免引入 GNOME、KDE 或完整桌面元包。镜像标识、`/etc/os-release`、启动菜单、Calamares 品牌、桌面与已安装系统的 GRUB 主题统一为 **WinduxEdu 1.0**。
 
 > WinduxEdu 使用 **Calamares** 作为唯一图形安装器。仓库和 ISO 不再构建或暴露 Debian Installer Live；桌面与开始菜单的“安装 WinduxEdu”入口均启动 `winduxedu-installer`。
 
@@ -11,7 +11,7 @@ WinduxEdu 1.0 是面向 AMD64 的 Debian Bookworm 轻量级 X11 Live 发行版�
 | 层次 | 方案 | 目的 |
 |---|---|---|
 | 基础 | Debian Bookworm、live-boot、systemd、Xorg 与固件 | 提供可启动的 Live ISO 与硬件兼容性。 |
-| 桌面与会话 | ElevenDE 3.5.1、Openbox、picom、Xorg、`winduxedu-elevende-display.service` | LiveCD 直接启动临时用户的 ElevenDE 桌面；已安装系统由 ElevenDE 原生 Win11 风格登录界面验证 Calamares 创建的用户。系统不安装 LightDM。 |
+| 桌面与会话 | ElevenDE 3.6、Openbox、picom、Xorg、`winduxedu-elevende-display.service` | LiveCD 直接启动临时用户的 ElevenDE 桌面；已安装系统由 ElevenDE 原生 Win11 风格登录界面验证 Calamares 创建的用户。系统不安装 LightDM。 |
 | 安装器 | Calamares、`winduxedu-installer` 与 `winduxedu-target-postinstall` | 以 WinduxEdu 品牌安装系统，并清理目标系统中的 Live 安装器入口。 |
 | 输入 | Fcitx5、中文扩展、拼音、Noto CJK | 通过 GTK、Qt 与 XIM 环境变量统一提供中文输入。 |
 | 工具 | 固定提交的系统工具和独立 DEB | 组件不在 ISO 构建阶段运行上游安装脚本；每项都有许可证副本与桌面入口。 |
@@ -22,7 +22,7 @@ WinduxEdu 1.0 是面向 AMD64 的 Debian Bookworm 轻量级 X11 Live 发行版�
 
 | 组件类别 | 示例 | 固定与安全边界 |
 |---|---|---|
-| 桌面核心 | ElevenDE 3.5.1，提交 `b4b97ca4fa0ac46235dd8a20b508ff5c9bdf1026` | 从公开固定提交构建；保持 ElevenDE GPL 与其上游 SAS、Explorer、runbox 的独立许可证边界。[1] |
+| 桌面核心 | ElevenDE 3.6，提交 `c3221d9eaeeca10d989ae1ae596d9cf82d9508e9` | 从公开固定提交构建；保持 ElevenDE GPL 与其上游 SAS、Explorer、runbox 的独立许可证边界。[1] |
 | 普通桌面工具 | WinduxEdu Store、Troubleshooting、Sticky Keys、Widgets | 独立 DEB、XDG 入口与许可证副本；所有入口经 ElevenDE 会话适配器并映射为精选 Windows 11 图标，不写入用户配置或自动启动项。 |
 | 命令兼容工具 | Windows 命令兼容工具 | 所有命令使用 `winduxedu-*` 前缀，避免覆盖 Linux 命令；系统操作继续通过标准系统授权路径执行。 |
 | 阻塞项 | `windowsuninstaller/mmclinux` | 请求的公开地址无法取得且许可证未知，不进入 ISO。 |
@@ -49,4 +49,4 @@ WinduxEdu 自有代码、配置、品牌与文档按 GPL-3.0-or-later 发布。�
 
 ## 参考
 
-[1]: https://github.com/SYSTEM-Intel-MIC/ElevenDE/tree/b4b97ca4fa0ac46235dd8a20b508ff5c9bdf1026 "ElevenDE 3.5.1 fixed source"
+[1]: https://github.com/SYSTEM-Intel-MIC/ElevenDE/tree/c3221d9eaeeca10d989ae1ae596d9cf82d9508e9 "ElevenDE 3.6 fixed source"

@@ -130,7 +130,27 @@ command -v depmod >/dev/null 2>&1 && depmod -a || true
 command -v update-initramfs >/dev/null 2>&1 && update-initramfs -u -k all || true
 
 # Regenerate GRUB only after the target theme and defaults are present.
-command -v update-grub >/dev/null 2>&1 && update-grub || true
+# Both tools come from grub2-common and the ISO validator asserts them too.
+# This step used to be `command -v update-grub && update-grub || true`, which
+# made a missing tool indistinguishable from success and left the installed
+# system without /boot/grub/grub.cfg -- the reported UEFI install failure.
+if [ ! -x /usr/sbin/update-grub ]; then
+    echo 'WinduxEdu: /usr/sbin/update-grub is missing on the target' >&2
+    exit 1
+fi
+if [ ! -x /usr/sbin/grub-install ]; then
+    echo 'WinduxEdu: /usr/sbin/grub-install is missing on the target' >&2
+    exit 1
+fi
+if [ ! -f /etc/default/grub ]; then
+    echo 'WinduxEdu: /etc/default/grub is missing on the target' >&2
+    exit 1
+fi
+update-grub
+if [ ! -s /boot/grub/grub.cfg ]; then
+    echo 'WinduxEdu: update-grub did not produce /boot/grub/grub.cfg' >&2
+    exit 1
+fi
 
 # Perform one more hardware/firmware probe at first boot, when the installed
 # kernel and target udev database are active. Optional firmware never blocks

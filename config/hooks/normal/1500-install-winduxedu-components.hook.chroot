@@ -120,8 +120,15 @@ Icon=utilities-terminal
 Terminal=false
 Categories=System;TerminalEmulator;
 StartupWMClass=XTerm
+NoDisplay=true
 EOF
-install -Dm644 /usr/local/share/applications/xterm.desktop /etc/skel/Desktop/终端.desktop
+# Requested: keep XTerm itself, drop it from the Start menu.  The desktop
+# shortcut is a separate copy without NoDisplay, so the entry disappears from
+# All Apps while the desktop shortcut keeps working.
+mkdir -p /etc/skel/Desktop
+grep -v '^NoDisplay=' /usr/local/share/applications/xterm.desktop \
+    > /etc/skel/Desktop/终端.desktop
+chmod 0644 /etc/skel/Desktop/终端.desktop
 cat > /etc/skel/Desktop/Microsoft\ Edge.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
@@ -158,6 +165,10 @@ rm -f /usr/share/applications/winduxedu-sticky-keys.desktop \
       /usr/share/applications/kbd-layout-viewer5.desktop \
       /usr/share/applications/calamares.desktop \
       /usr/share/applications/install-system.desktop
+# Requested: guvcview keeps its package and its command line, but no Start
+# menu shortcut (xterm above gets the same treatment via NoDisplay).
+rm -f /usr/share/applications/guvcview.desktop \
+      /usr/share/applications/guvcview-viewer.desktop
 
 # Never expose standalone session/power commands as ordinary applications.  The
 # Start and SAS power controls remain the only supported routes, so command

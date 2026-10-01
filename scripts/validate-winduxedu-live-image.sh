@@ -108,6 +108,15 @@ require_path 'etc/systemd/system/winduxedu-elevende-display.service'
 require_path 'etc/systemd/system/graphical.target.wants/winduxedu-elevende-display.service'
 require_path 'etc/systemd/system/multi-user.target.wants/winduxedu-live-session-init.service'
 require_path 'usr/local/share/elevende-shell/icons/64x64/apps/winduxedu-installer.svg'
+# The 教育版设置 settings page is a real, reachable page, not just a nav label:
+# it resolves its glyph through the shared settings-nav-<id>.png convention.
+require_path 'usr/local/share/elevende-shell/icons/64x64/apps/settings-nav-edu.png'
+# UEFI install: grub2-common owns both tools Calamares' postinstall runs, and
+# the image must seed /etc/default/grub itself (Debian bookworm only ships it
+# from grub-cloud-amd64, which is the reported "update-grub missing" failure).
+for grub_path in usr/sbin/update-grub usr/sbin/grub-install etc/default/grub; do
+    require_path "$grub_path"
+done
 
 # The system must use ElevenDE's native display/session chain, never LightDM.
 if grep -qE '/(usr/sbin/)?lightdm|/etc/lightdm' "$LIST"; then
@@ -125,7 +134,12 @@ SESSION_SCRIPT="$WORK/elevende-session"
 cat_image_file 'usr/local/bin/elevende-session' "$SESSION_SCRIPT"
 grep -q 'WINDUXEDU-SESSION-POLICY' "$SESSION_SCRIPT"
 grep -q 'Live session bypasses the login gate' "$SESSION_SCRIPT"
-grep -q 'single long-lived process' "$SESSION_SCRIPT"
+# The WinduxEdu session helpers (touchscreen mapping, screen keyboard and the
+# Seewo toolbar) must be started before the login gate so they are available
+# while the lock screen is asking for a password, and must be tracked by pid
+# file so the session can stop them again.
+grep -q 'start_winduxedu_helpers' "$SESSION_SCRIPT"
+grep -q 'winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar' "$SESSION_SCRIPT"
 DISPLAY_LAUNCHER="$WORK/winduxedu-elevende-display"
 cat_image_file 'usr/local/sbin/winduxedu-elevende-display' "$DISPLAY_LAUNCHER"
 grep -q 'if \[ -f "\$LOGOUT_MARKER" \]' "$DISPLAY_LAUNCHER"
@@ -212,7 +226,18 @@ for path in \
     usr/bin/winsat \
     usr/bin/winver \
     usr/bin/winduxedu-ipconfig \
-    usr/local/bin/sas-screen; do
+    usr/local/bin/sas-screen \
+    usr/local/bin/winduxedu-edu-settings \
+    usr/local/bin/winduxedu-touch-fix \
+    usr/local/bin/winduxedu-touch-calibrate \
+    usr/local/bin/winduxedu-oskd \
+    usr/local/bin/winduxedu-seewo-toolbar \
+    usr/local/libexec/winduxedu-edu-apply \
+    usr/local/libexec/winduxedu-edu-uninstall \
+    usr/local/share/applications/winduxedu-touch-calibrate.desktop \
+    etc/X11/xorg.conf.d/60-winduxedu-touchscreen.conf \
+    etc/winduxedu/edu-settings.conf \
+    usr/share/applications/com.seewo.easisidebar.desktop; do
     require_path "$path"
 done
 
@@ -255,7 +280,7 @@ fi
 
 # User-requested upstream helpers must not remain in All Apps.  Validate the
 # actual expanded filesystem rather than trusting the hook source.
-for removed_entry in picom.desktop lxqt-config-session.desktop kbd-layout-viewer5.desktop calamares.desktop install-system.desktop; do
+for removed_entry in picom.desktop lxqt-config-session.desktop kbd-layout-viewer5.desktop calamares.desktop install-system.desktop guvcview.desktop guvcview-viewer.desktop; do
     if [ -e "$FULL_ROOT/usr/share/applications/$removed_entry" ] || [ -e "$FULL_ROOT/usr/local/share/applications/$removed_entry" ]; then
         echo "final ISO still exposes a removed desktop entry: $removed_entry" >&2
         exit 1
@@ -265,6 +290,12 @@ TERMINAL_ENTRY="$WORK/xterm.desktop"
 cat_image_file 'usr/local/share/applications/xterm.desktop' "$TERMINAL_ENTRY"
 grep -q 'DejaVu Sans Mono' "$TERMINAL_ENTRY"
 grep -q 'XTerm\*background:#000000' "$TERMINAL_ENTRY"
+# Requested: XTerm stays installed but leaves the Start menu; the desktop
+# shortcut is a separate copy that must NOT carry NoDisplay.
+grep -qx 'NoDisplay=true' "$TERMINAL_ENTRY"
+XTERM_SHORTCUT="$WORK/xterm-shortcut"
+cat_image_file 'etc/skel/Desktop/终端.desktop' "$XTERM_SHORTCUT"
+! grep -q '^NoDisplay=' "$XTERM_SHORTCUT"
 FONTCONF="$WORK/winduxedu-fontconfig.xml"
 cat_image_file 'etc/fonts/local.conf' "$FONTCONF"
 grep -q '<family>DejaVu Sans Mono</family>' "$FONTCONF"
@@ -276,9 +307,11 @@ grep -q '^XTerm\*faceName: DejaVu Sans Mono,Noto Sans CJK SC$' "$XTERM_RESOURCES
 grep -q '^XTerm\*cjkWidth: false$' "$XTERM_RESOURCES"
 grep -q '^XTerm\*background: #000000$' "$XTERM_RESOURCES"
 
-# The collected proprietary teaching applications must be installed, including
-# 希沃管家 (com.seewo.terminalmanager), whose bogus "libstdc++6 (<< 9)" clause
-# hook 1550 rewrites out of the control file before handing it to apt.
+# The collected proprietary teaching applications must be installed: eight
+# collected apps plus the six sidebar components (希沃侧边栏, its UDI hotspot
+# dependency and four 希沃 miniapps).  希沃管家
+# (com.seewo.terminalmanager), whose bogus "libstdc++6 (<< 9)" clause hook 1550
+# rewrites out of the control file before handing it to apt.
 DPKG_STATUS="$FULL_ROOT/var/lib/dpkg/status"
 for edu_package in \
     onlyoffice-desktopeditors \
@@ -288,7 +321,13 @@ for edu_package in \
     com.seewo.terminalmanager \
     linuxqq \
     wechat \
-    com.alibabainc.dingtalk; do
+    com.alibabainc.dingtalk \
+    com.seewo.easisidebar \
+    udi-hotspot-service \
+    com.seewo.easiminiapps.desktopscreenshot \
+    com.seewo.easiminiapps.desktoptimer \
+    com.seewo.easiminiapps.luckyrandom \
+    com.seewo.easiminiapps.rollcall; do
     grep -qx "Package: $edu_package" "$DPKG_STATUS" || {
         echo "proprietary teaching application missing from dpkg status: $edu_package" >&2
         exit 1
@@ -313,7 +352,8 @@ require_path 'usr/share/applications/com.seewo.terminalmanager.desktop'
 for masked_unit in \
     com.seewo.terminalmanager.service \
     com.cvte.maxhub.alfred.service \
-    disable-seewo-network-card.service; do
+    disable-seewo-network-card.service \
+    com.ifpdos.udi.hotspot.service; do
     mask_target="$(readlink "$FULL_ROOT/etc/systemd/system/$masked_unit" 2>/dev/null || true)"
     [ "$mask_target" = "/dev/null" ] || {
         echo "vendor unit is not masked in the final image: $masked_unit (got: ${mask_target:-absent})" >&2
@@ -324,6 +364,82 @@ if [ -e "$FULL_ROOT/etc/xdg/autostart/com.seewo.terminalmanager.desktop" ]; then
     echo 'Seewo Terminal Manager autostart entry survived into the final image' >&2
     exit 1
 fi
+
+# 希沃侧边栏 registers a *user* systemd unit, so its default-off switch lives
+# in the global /etc/systemd/user namespace instead of /etc/systemd/system.
+# Both the mask and the absence of an activation link are required: the sidebar
+# is third-party internet software (non-open-source, unrelated to WinduxEdu /
+# SYSTEM-Intel-MIC) and 教育版设置 → 侧边栏 is what turns it on.
+sidebar_mask="$(readlink "$FULL_ROOT/etc/systemd/user/com.seewo.easisidebar.service" 2>/dev/null || true)"
+[ "$sidebar_mask" = "/dev/null" ] || {
+    echo "the sidebar user unit is not globally masked (got: ${sidebar_mask:-absent})" >&2
+    exit 1
+}
+for wants_link in \
+    "$FULL_ROOT/etc/systemd/user/default.target.wants/com.seewo.easisidebar.service" \
+    "$FULL_ROOT/etc/systemd/user/graphical-session.target.wants/com.seewo.easisidebar.service"; do
+    if [ -e "$wants_link" ] || [ -L "$wants_link" ]; then
+        echo "the sidebar user unit still has an activation link: ${wants_link#$FULL_ROOT}" >&2
+        exit 1
+    fi
+done
+# EasiSideBar hard-codes "Noto Sans CJK SC" in its Avalonia host and declares
+# no Depends, so the font is a hard requirement: without it the unit crash-
+# loops with StandardOutput=null and the failure is invisible in the journal.
+grep -qx 'Package: fonts-noto-cjk' "$DPKG_STATUS" || {
+    echo 'fonts-noto-cjk is missing; EasiSideBar would crash-loop on first start' >&2
+    exit 1
+}
+
+# 希沃白板 (task): the menu entry must launch the real EasiNote5 program from
+# the vendor's program directory, never the wrapper shell script.
+EASI_DESKTOP_FILE="$WORK/easinote5.desktop"
+cat_image_file 'usr/share/applications/com.seewo.easinote5.desktop' "$EASI_DESKTOP_FILE"
+grep -Eq '^Exec=.*(/EasiNote5|winduxedu-easinote5)([[:space:]]|$)' "$EASI_DESKTOP_FILE"
+if grep -Eq '^Exec=.*\.sh([[:space:]]|$)' "$EASI_DESKTOP_FILE"; then
+    echo 'the EasiNote5 menu entry still launches a vendor shell script' >&2
+    exit 1
+fi
+
+# 钉钉 (task): the vendor's own Debian library-removal loop only executes
+# inside `for file in $(ls /home)`, which never runs while the image still has
+# an empty /home.  Hook 1550 re-runs it; these are the members that made the
+# bundled web view die with a GLIBC_... symbol lookup error against the system
+# libgtk-3.so.0.
+DT_RELEASE_DIR=
+for dt_dir in "$FULL_ROOT"/opt/apps/com.alibabainc.dingtalk/files/*/; do
+    [ -d "$dt_dir" ] || continue
+    DT_RELEASE_DIR="$dt_dir"
+    break
+done
+[ -n "$DT_RELEASE_DIR" ] || {
+    echo 'DingTalk release directory is missing from the final image' >&2
+    exit 1
+}
+for stale in libm.so.6 libstdc++.so.6 libstdc++.so.6.0.25 \
+    libgbm.so.1.0.0 libGLX.so.0.0.0 libGLdispatch.so.0.0.0; do
+    if [ -e "$DT_RELEASE_DIR$stale" ]; then
+        echo "DingTalk still ships an incompatible bundled library: $stale" >&2
+        exit 1
+    fi
+done
+
+# ONLYOFFICE (task): it must be the system-wide default application/pdf
+# handler, and must advertise the MIME type itself so the association sticks.
+MIMEAPPS_LIST="$WORK/mimeapps.list"
+cat_image_file 'etc/xdg/mimeapps.list' "$MIMEAPPS_LIST"
+oo_entry="$(grep -m1 '^application/pdf=' "$MIMEAPPS_LIST" | cut -d= -f2 || true)"
+case "$oo_entry" in
+    onlyoffice*.desktop) ;;
+    *)
+        echo "application/pdf is not handled by ONLYOFFICE: ${oo_entry:-absent}" >&2
+        exit 1
+        ;;
+esac
+require_path "usr/share/applications/$oo_entry"
+OO_DESKTOP_FILE="$WORK/onlyoffice.desktop"
+cat_image_file "usr/share/applications/$oo_entry" "$OO_DESKTOP_FILE"
+grep -q '^MimeType=.*application/pdf' "$OO_DESKTOP_FILE"
 
 # All Apps must not surface session/power helpers as regular applications.  This
 # validates the fully installed filesystem rather than trusting the source hook.

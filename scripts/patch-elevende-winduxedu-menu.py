@@ -21,9 +21,15 @@ new_zh_parse = '''            } else if ((!strncmp(p, "Name[zh_CN]=", 12) ||
             } else if (!strncmp(p, "Exec=", 5) && !ex[0]) {
 '''
 if new_zh_parse not in text:
-    if old_zh_parse not in text:
+    if old_zh_parse in text:
+        text = text.replace(old_zh_parse, new_zh_parse, 1)
+    elif "only accept a Name[xx] whose key matches THIS session's" in text:
+        # ElevenDE 3.6 selects Name[xx] by the session locale itself, which is
+        # strictly better than the WinduxEdu fallback: with the zh_CN session
+        # locale exported by the patched elevende-session, Name[zh_CN] wins.
+        pass
+    else:
         raise SystemExit("WinduxEdu menu zh_CN parse marker not found")
-    text = text.replace(old_zh_parse, new_zh_parse, 1)
 
 old_locale = '''        if (!nm[0] && zh[0]) snprintf(nm, sizeof nm, "%s", zh);
         if (!nm[0]) continue;
@@ -41,9 +47,15 @@ new_locale = '''        size_t zhl = strlen(zh);
         if (!nm[0]) continue;
 '''
 if new_locale not in text:
-    if old_locale not in text:
+    if old_locale in text:
+        text = text.replace(old_locale, new_locale, 1)
+    elif "if (locnm[0]) snprintf(nm, sizeof nm, \"%s\", locnm);" in text:
+        # ElevenDE 3.6 already prefers the locale-matched Name[xx] over Name=.
+        # WinduxEdu's zh_CN-first rule is therefore satisfied by the session
+        # locale that the WinduxEdu session policy exports.
+        pass
+    else:
         raise SystemExit("WinduxEdu menu locale marker not found")
-    text = text.replace(old_locale, new_locale, 1)
 
 old_filter = '''        if (!ex[0]) continue;
         App *a = &apps[napps];

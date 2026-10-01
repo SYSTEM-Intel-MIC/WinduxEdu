@@ -1,0 +1,121 @@
+#!/bin/sh
+# WinduxEdu touchscreen session helper (started from the patched
+# elevende-session, before the login gate).
+#
+# Interactive panels (Seewo/MaxHUB and similar) commonly come up with the
+# touch device disabled, a stale coordinate-transform matrix left over from a
+# rotated/mirrored panel, or the absolute device mapped to an output that is
+# no longer connected.  All three present the same way: touch is dead and the
+# pointer sits pinned in the middle of the screen, while xinput_calibrator
+# reports "no supported device found" or writes a config nothing ever loads.
+#
+# This helper re-applies a known-good mapping a few seconds after X starts and
+# again on every polling tick, and it is what actually consumes the user
+# calibration written by /usr/local/bin/winduxedu-touch-calibrate.
+set -u
+
+log() { echo "touch-fix: $*"; }
+
+if ! command -v xinput >/dev/null 2>&1; then
+    log "xinput is not installed; nothing to do"
+    exit 0
+fi
+
+CONF="${XDG_CONFIG_HOME:-${HOME:-}/.config}/winduxedu/edu-settings.conf"
+IDENTITY="1 0 0 0 1 0 0 0 1"
+
+read_matrix() {
+    matrix="$(sed -n 's/^touch-calibration=//p' "$CONF" 2>/dev/null | tail -n 1)"
+    # Exactly nine numbers, otherwise fall back to the untransformed matrix.
+    if ! printf '%s\n' "$matrix" | grep -Eq '^-?[0-9]+(\.[0-9]+)?( +-?[0-9]+(\.[0-9]+)?){8}$'; then
+        matrix="$IDENTITY"
+    fi
+    printf '%s\n' "$matrix"
+}
+
+# Absolute touch devices advertise themselves as touchscreens; mice, XTEST
+# stubs, power buttons and video buses must never be remapped.
+is_touchscreen() {
+    printf '%s' "$1" | grep -Eiq \
+        'touch|screen|digitizer|capacitive|wacom|goodix|ili[0-9]|elan|ft[0-9]{3}|hid over i2c|multitouch|multi-touch'
+}
+
+list_pointer_ids() {
+    # "slave  pointer" rows only; drop the XTEST emulation device.
+    xinput --list --short 2>/dev/null | sed -n 's/^[^ ].*id=\([0-9][0-9]*\).*slave *pointer.*/\1/p' |
+        while read -r id; do
+            [ -n "$id" ] || continue
+            name="$(xinput --list --name-only "$id" 2>/dev/null)" || continue
+            case "$name" in
+                *XTEST*) continue ;;
+            esac
+            is_touchscreen "$name" || continue
+            printf '%s\t%s\n' "$id" "$name"
+        done
+}
+
+target_output() {
+    out="$(xrandr --query 2>/dev/null | sed -n 's/^\([A-Za-z0-9_-]*\) connected primary.*/\1/p' | head -n 1)"
+    [ -n "$out" ] ||
+        out="$(xrandr --query 2>/dev/null | sed -n 's/^\([A-Za-z0-9_-]*\) connected.*/\1/p' | head -n 1)"
+    printf '%s\n' "$out"
+}
+
+apply_once() {
+    out="$(target_output)"
+    [ -n "$out" ] || return 0
+    matrix="$(read_matrix)"
+
+    applied=0
+    while IFS='	' read -r id name; do
+        [ -n "$id" ] || continue
+        xinput --enable "$id" >/dev/null 2>&1 || true
+        if [ "$matrix" != "$IDENTITY" ]; then
+            # Explicit calibration wins: the calibrator already folded the
+            # output mapping into the nine values it wrote.
+            # shellcheck disable=SC2086
+            xinput set-prop "$id" "Coordinate Transformation Matrix" $matrix \
+                >/dev/null 2>&1 || true
+        else
+            # Clear any stale rotation/mirroring, then pin touch to the
+            # output it physically belongs to.
+            # shellcheck disable=SC2086
+            xinput set-prop "$id" "Coordinate Transformation Matrix" $IDENTITY \
+                >/dev/null 2>&1 || true
+            xinput map-to-output "$id" "$out" >/dev/null 2>&1 || true
+        fi
+        applied=$((applied + 1))
+    done <<EOF
+$(list_pointer_ids)
+EOF
+    # The loop is deliberately idempotent; only announce a real change so the
+    # session log does not fill up every ten seconds.
+    sig="$out|$matrix|$applied"
+    if [ "$sig" != "${last_sig:-}" ]; then
+        last_sig="$sig"
+        log "enabled and mapped $applied touchscreen device(s) to $out (matrix $matrix)"
+    fi
+}
+
+log "waiting for X on ${DISPLAY:-unset}"
+waited=0
+while ! xrandr --query >/dev/null 2>&1; do
+    waited=$((waited + 1))
+    if [ "$waited" -ge 60 ]; then
+        log "X never became ready; exiting"
+        exit 0
+    fi
+    sleep 1
+done
+
+# Give udev/X a moment to finish adding the panel's touch node, then settle.
+sleep 2
+apply_once
+
+while sleep 10; do
+    if ! xrandr --query >/dev/null 2>&1; then
+        log "display went away; exiting"
+        exit 0
+    fi
+    apply_once
+done

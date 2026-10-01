@@ -6,7 +6,7 @@
 2. **这些软件与 SYSTEM-Intel-MIC 无关。** SYSTEM-Intel-MIC 不是其开发者、不是其分发渠道维护者、不拥有其商标，也不对其功能、安全性、更新或服务可用性提供任何保证、责任承担。Windows、Microsoft、Tencent、Alibaba/DingTalk、ONLYOFFICE、Seewo（希沃）等名称与商标归各自权利人所有。
 3. **本仓库仅作收录（collection only）。** 文件按原样（as-is）收录，不做任何修改、重打包、去广告、注入或二次封装。
 4. **版本不更换。** 每个文件的上游版本以 [`DEB-INVENTORY.tsv`](DEB-INVENTORY.tsv) 中记录的 `Package` / `Version` 字段为准，收录与构建流程均不得替换、降级、升级或改动这些文件的内容；任何文件被改动后其 SHA-256 必须与清单不符，即视为违规。
-5. **分类结构保留原始归属。** 本目录的分类文件夹（`dingding/`、`Onlyoffice/`、`Seewo/`、`Tencent IM/`）为原维护者手动整理的分类，收录、引用与后续集成必须沿用该结构，不得合并、改名或重新归类。
+5. **分类结构保留原始归属。** 本目录的分类文件夹（`dingding/`、`Onlyoffice/`、`Seewo/`、`Tencent IM/`）为原维护者手动整理的分类，收录、引用与后续集成必须沿用该结构，不得合并、改名或重新归类。后续新增的**希沃侧边栏组件**单独存放于 `sidebar/`，不并入上述原维护者分类，也不改动任何既有条目。
 
 ## 分类与清单
 
@@ -20,8 +20,14 @@
 | `Seewo/` | `视频展台.deb` | com.seewo.easicamera | 2.0.5.2580 | 133.2 |
 | `Tencent IM/` | `QQ.deb` | linuxqq | 3.2.34-53644 | 178.5 |
 | `Tencent IM/` | `WeChat.deb` | wechat | 4.1.13.23 | 220.6 |
+| `sidebar/` | `com.seewo.easisidebar_6.0.0.877_amd64.deb` | com.seewo.easisidebar | 6.0.0.877 | 32.1 |
+| `sidebar/` | `UdiHotspotService-R.2.5.1.23-amd64.deb` | udi-hotspot-service | 2.5.1.23.R | 2.5 |
+| `sidebar/` | `com.seewo.easiminiapps.desktopscreenshot_6.0.0.1152_amd64.deb` | com.seewo.easiminiapps.desktopscreenshot | 6.0.0.1152 | 9.9 |
+| `sidebar/` | `com.seewo.easiminiapps.desktoptimer_6.0.0.1078_amd64.deb` | com.seewo.easiminiapps.desktoptimer | 6.0.0.1078 | 11.0 |
+| `sidebar/` | `com.seewo.easiminiapps.luckyrandom_6.0.0.1071_amd64.deb` | com.seewo.easiminiapps.luckyrandom | 6.0.0.1071 | 48.8 |
+| `sidebar/` | `com.seewo.easiminiapps.rollcall_6.0.0.1071_amd64.deb` | com.seewo.easiminiapps.rollcall | 6.0.0.1071 | 46.5 |
 
-合计 8 个文件，约 1.71 GiB。完整的 `Package` / `Version` / `Architecture` / `Size` / `SHA-256` 机器可读清单见 [`DEB-INVENTORY.tsv`](DEB-INVENTORY.tsv)（制表符分隔，UTF-8）。
+合计 14 个文件（原维护者收录的 8 个 + 后续新增的希沃侧边栏组件 6 个），约 1.86 GiB。完整的 `Package` / `Version` / `Architecture` / `Size` / `SHA-256` 机器可读清单见 [`DEB-INVENTORY.tsv`](DEB-INVENTORY.tsv)（制表符分隔，UTF-8）。
 
 ## 分卷存储
 

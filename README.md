@@ -1,6 +1,6 @@
 # WinduxEdu 1.0
 
-**WinduxEdu 1.0** 是由 **SYSTEM-Intel-MIC** 维护的 Debian Bookworm AMD64 Live 教育发行版集成层。它以 **ElevenDE 3.5.1** 为核心 X11 桌面，提供 Windows 风格的开始菜单、任务栏、统一标题栏、资源管理器、设置、任务管理器、运行对话框、中文输入、Calamares 安装器和一组受控集成的 Windows 风格工具，并面向课堂教学内置**开源教育软件**与**按声明收录的专有教学软件**。
+**WinduxEdu 1.0** 是由 **SYSTEM-Intel-MIC** 维护的 Debian Bookworm AMD64 Live 教育发行版集成层。它以 **ElevenDE 3.6** 为核心 X11 桌面，提供 Windows 风格的开始菜单、任务栏、统一标题栏、资源管理器、设置、任务管理器、运行对话框、中文输入、Calamares 安装器和一组受控集成的 Windows 风格工具，并面向课堂教学内置**开源教育软件**与**按声明收录的专有教学软件**。
 
 > `main` 为唯一主干。推送到 `main`（或手动触发）即运行 GitHub Actions：组件包构建 → ISO 组装 → squashfs/QEMU 校验，全部通过后自动创建 **Preview Release**（预发布）并附带 ISO（超过 2 GiB 时自动切分为分卷资产）与 SHA-256 校验文件。
 
@@ -40,7 +40,7 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 - **与 SYSTEM-Intel-MIC 无关**：本组织非开发者、非分发维护者、不拥有其商标、不提供任何保证；
 - **仅作收录、版本不更换**：`Package`/`Version`/SHA-256 固定于 `edu-software/DEB-INVENTORY.tsv`；
 - 为遵守 GitHub 单文件 100 MB 上限，每个 DEB 以 **50 MiB 分卷**存放（`PARTS-INDEX.tsv` 逐卷哈希，`scripts/assemble-edu-debs.py` 重组并双层校验）。
-- **进入 Live 镜像**：CI 在 staging 阶段用 `scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages` 重组并校验，`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 以 `apt-get install -y --no-install-recommends` 逐个安装进 chroot（安装后删除暂存目录，不进 squashfs）。**希沃管家（com.seewo.terminalmanager）同样安装**：安装钩子先用 `dpkg-deb` 把它 control 里在 Bookworm 上永远无法满足的 `libstdc++6 (<< 9)` 改写掉，再交给 apt，避免整个事务中止；8 个包由 `scripts/validate-winduxedu-live-image.sh` 在最终 squashfs 的 dpkg status 中逐一断言。该包的 systemd 单元与 `/etc/xdg/autostart` 自启项在通用 Live 镜像上被屏蔽，菜单入口保留可手动启动（详见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)）。`libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；`--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网抓取字体。希沃/钉钉/微信/QQ 等入口若只自带 `/opt/apps/...` 桌面文件，安装钩子会补拷到 `/usr/share/applications/` 保证菜单可见。
+- **进入 Live 镜像**：CI 在 staging 阶段用 `scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages` 重组并校验，`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 以 `apt-get install -y --no-install-recommends` 逐个安装进 chroot（安装后删除暂存目录，不进 squashfs）。**希沃管家（com.seewo.terminalmanager）同样安装**：安装钩子先用 `dpkg-deb` 把它 control 里在 Bookworm 上永远无法满足的 `libstdc++6 (<< 9)` 改写掉，再交给 apt，避免整个事务中止；8 个专有教学软件与 6 个希沃侧边栏组件（共 14 个包）由 `scripts/validate-winduxedu-live-image.sh` 在最终 squashfs 的 dpkg status 中逐一断言。该包的 systemd 单元与 `/etc/xdg/autostart` 自启项在通用 Live 镜像上被屏蔽，菜单入口保留可手动启动（详见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)）。`libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；`--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网抓取字体。希沃/钉钉/微信/QQ 等入口若只自带 `/opt/apps/...` 桌面文件，安装钩子会补拷到 `/usr/share/applications/` 保证菜单可见。
 
 声明全文见 [`edu-software/README.md`](edu-software/README.md)。
 
@@ -48,7 +48,7 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 
 | 范围 | WinduxEdu 1.0 实现 |
 | --- | --- |
-| **核心桌面** | ElevenDE 3.5.1、Openbox、picom、Xorg、NetworkManager 与 Fcitx5 中文输入。ElevenDE 负责开始菜单、任务栏、窗口标题栏、窗口操作和其自身的 Win11 风格登录/锁屏界面。 |
+| **核心桌面** | ElevenDE 3.6、Openbox、picom、Xorg、NetworkManager 与 Fcitx5 中文输入。ElevenDE 负责开始菜单、任务栏、窗口标题栏、窗口操作和其自身的 Win11 风格登录/锁屏界面。 |
 | **LiveCD** | `winduxedu-elevende-display.service` 使用 Xorg/xinit 直接启动一次性的 `user` 桌面会话。Live 用户不需要、也不公开密码；该临时用户只由系统服务通过 `runuser` 启动。 |
 | **已安装系统** | Calamares 后安装步骤写入实际创建的用户至 `/etc/winduxedu/session-user`。同一个 ElevenDE 原生显示服务以该用户启动会话，ElevenDE 自己的 `elevende-lock --login` 显示并验证密码。**不使用 LightDM 或其 Greeter。** |
 | **安全边界** | Live 初始化不会设置 `user:live`、不会创建 `nopasswdlogin` 组，也不会更改安装时设置的密码。已安装系统保留用户密码并仅将用户加入 Debian `sudo` 组。 |
@@ -81,7 +81,7 @@ WinduxEdu 对每个集成组件提供明确的 ElevenDE 图标别名，而不是
 
 | 组件 | 上游 | WinduxEdu 包与技术实现 | 入口/图标与安全边界 |
 | --- | --- | --- | --- |
-| **ElevenDE 3.5.1** | [SYSTEM-Intel-MIC/ElevenDE](https://github.com/SYSTEM-Intel-MIC/ElevenDE) | 固定 `b4b97ca`；构建副本应用桌面启动、显示重排、图标解析、图标覆盖和会话策略补丁。 | 核心 Shell；Live 绕过登录，安装系统使用其原生登录界面。 |
+| **ElevenDE 3.6** | [SYSTEM-Intel-MIC/ElevenDE](https://github.com/SYSTEM-Intel-MIC/ElevenDE) | 固定 `c3221d9e`；构建副本应用桌面启动、显示重排、图标解析、图标覆盖、会话策略与设置「教育版设置」页补丁。 | 核心 Shell；Live 绕过登录，安装系统使用其原生登录界面。 |
 | Linux PC Manager | [SYSTEM-Intel-MIC/LinuxPCManager](https://github.com/SYSTEM-Intel-MIC/LinuxPCManager) | Python 源码打包为 `linux-pcmanager`。 | `linux-pcmanager` / 控制面板图标。 |
 | Registry Editor | [heyManNice/regedit](https://github.com/heyManNice/regedit) | Meson/C 构建为 `linux-regedit`，并提供 `regedit` 命令别名。 | `linux-regedit` / Windows 键图标。 |
 | Device Manager | [daimile2/Device-Manager-But-Linux](https://github.com/daimile2/Device-Manager-But-Linux) | Go 构建；上游缺少 `go.sum`，WinduxEdu 使用 `vendor/winduxedu-device-manager.go.sum` 并强制 `-mod=readonly`。 | `devmgr` / 设备图标。 |
@@ -107,7 +107,7 @@ cd winduxedu
 bash scripts/local-test.sh
 ```
 
-构建顺序为：来源锁与缓存 → 核心/附加 DEB → SHA-256 与包元数据校验 → 构建清单 → Live staging → Bookworm ISO → BIOS/UEFI 重打包 → squashfs 内容校验 → QEMU BIOS/UEFI 冒烟。根文件系统用 `xz` 压缩（8 个专有教学软件会让 ISO 接近 ISO9660 的 4 GiB 单文件上限，gzip 的压缩比不够），构建步骤显式断言最终 ISO 小于 4 GiB；超过 GitHub 2 GiB 单附件上限时按原始字节切分成 `.001/.002` 卷发布。`scripts/validate-winduxedu-live-image.sh` 必须确认 Calamares 后安装模块、最小 Live sudoers、无 LightDM、原生 ElevenDE 服务、13 个图标别名、受限 polkit 调度器、无系统命令桌面入口、WinduxEdu Store、关键组件入口、厂商开机单元已屏蔽，以及 8 个专有教学软件均已安装在最终 squashfs 中。
+构建顺序为：来源锁与缓存 → 核心/附加 DEB → SHA-256 与包元数据校验 → 构建清单 → Live staging → Bookworm ISO → BIOS/UEFI 重打包 → squashfs 内容校验 → QEMU BIOS/UEFI 冒烟。根文件系统用 `xz` 压缩（14 个专有组件会让 ISO 接近 ISO9660 的 4 GiB 单文件上限，gzip 的压缩比不够），构建步骤显式断言最终 ISO 小于 4 GiB；超过 GitHub 2 GiB 单附件上限时按原始字节切分成 `.001/.002` 卷发布。`scripts/validate-winduxedu-live-image.sh` 必须确认 Calamares 后安装模块、最小 Live sudoers、无 LightDM、原生 ElevenDE 服务、13 个图标别名、受限 polkit 调度器、无系统命令桌面入口、WinduxEdu Store、关键组件入口、厂商开机单元已屏蔽，以及 14 个专有组件（8 个教学软件与希沃侧边栏的 6 个包）均已安装在最终 squashfs 中。
 
 GitHub Actions（[`.github/workflows/build.yml`](.github/workflows/build.yml)）在 `main` 与 `winduxedu-1.0-integration` 推送时运行：
 
@@ -162,4 +162,4 @@ Start 与 SAS 的电源操作通过 `/usr/local/libexec/winduxedu-privileged-act
 
 ## 参考
 
-[1]: https://github.com/SYSTEM-Intel-MIC/ElevenDE/tree/b4b97ca4fa0ac46235dd8a20b508ff5c9bdf1026 "ElevenDE source and license boundary"
+[1]: https://github.com/SYSTEM-Intel-MIC/ElevenDE/tree/c3221d9eaeeca10d989ae1ae596d9cf82d9508e9 "ElevenDE source and license boundary"
