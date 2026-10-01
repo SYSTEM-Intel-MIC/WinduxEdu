@@ -39,8 +39,15 @@ for deb in "$EDU_DIR"/*.deb; do
     # Ensure HOME is set for vendor postinsts that write to $HOME/.config/mimeapps.list
 # (ONLYOFFICE, 希沃白板). Some postinsts run in contexts that don't inherit
 # environment variables, so set it in /etc/environment and create the directory.
+# Also create a dpkg pre-inst hook to ensure HOME is set for all postinsts.
 echo 'HOME="/root"' >> /etc/environment
 mkdir -p /home/root/.config
+mkdir -p /etc/dpkg/pre-inst.d
+cat > /etc/dpkg/pre-inst.d/set-home <<'EOF'
+#!/bin/sh
+export HOME=/root
+EOF
+chmod +x /etc/dpkg/pre-inst.d/set-home
 export HOME=/root
 apt-get install -y --no-install-recommends "$deb"
 installed=$((installed + 1))

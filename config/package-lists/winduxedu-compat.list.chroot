@@ -11,6 +11,8 @@ dkms
 build-essential
 # Kernel headers for DKMS builds (matches linux-image-amd64)
 linux-headers-amd64
+# Azure kernel headers for DKMS on CI runners (kernel 6.17.0-1022-azure)
+linux-headers-azure
 
 # CPU 微码
 intel-microcode
