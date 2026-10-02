@@ -161,7 +161,7 @@ jobs:
             --initramfs live-boot \
             --initsystem systemd \
             --distribution bookworm \
-            --architectures amd64 \
+            --architectures amd64 i386 \
             --linux-packages linux-image \
             --archive-areas "main contrib non-free non-free-firmware" \
             --mirror-bootstrap "http://deb.debian.org/debian" \
