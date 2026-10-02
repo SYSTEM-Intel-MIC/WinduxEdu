@@ -18,13 +18,13 @@ apt-get install -y --no-install-recommends \
     wine wine32 wine64 libwine libwine:i386 fonts-wine
 
 # Wine 32-bit library dependencies (i386 architecture)
+# Note: libldap in Bookworm is libldap-2.5-2, not libldap-2.4-2
 apt-get install -y --no-install-recommends \
     libasound2:i386 \
     libasound2-plugins:i386 \
     libgstreamer-plugins-base1.0-0:i386 \
     libgstreamer1.0-0:i386 \
     libpulse0:i386 \
-    libasound2-plugins:i386 \
     libglib2.0-0:i386 \
     libgdk-pixbuf-2.0-0:i386 \
     libgtk-3-0:i386 \
@@ -47,9 +47,6 @@ apt-get install -y --no-install-recommends \
     libxcursor1:i386 \
     libxcomposite1:i386 \
     libxdamage1:i386 \
-    libxfixes3:i386 \
-    libxi6:i386 \
-    libxrender1:i386 \
     libxcb1:i386 \
     libx11-xcb1:i386 \
     libxshmfence1:i386 \
@@ -118,47 +115,7 @@ apt-get install -y --no-install-recommends \
     libcom-err2:i386 \
     libkrb5support0:i386 \
     libkeyutils1:i386 \
-    libldap-2.4-2:i386 \
-    libsasl2-2:i386 \
-    libgnutls30:i386 \
-    libp11-kit0:i386 \
-    libtasn1-6:i386 \
-    libnettle8:i386 \
-    libhogweed6:i386 \
-    libgcrypt20:i386 \
-    libgpg-error0:i386 \
-    libk5crypto3:i386 \
-    libkrb5support0:i386 \
-    libkeyutils1:i386 \
-    libldap-2.4-2:i386 \
-    libsasl2-2:i386 \
-    libgnutls30:i386 \
-    libp11-kit0:i386 \
-    libtasn1-6:i386 \
-    libnettle8:i386 \
-    libhogweed6:i386 \
-    libgcrypt20:i386 \
-    libgpg-error0:i386 \
-    libkrb5-3:i386 \
-    libk5crypto3:i386 \
-    libcom-err2:i386 \
-    libkrb5support0:i386 \
-    libkeyutils1:i386 \
-    libldap-2.4-2:i386 \
-    libsasl2-2:i386 \
-    libgnutls30:i386 \
-    libp11-kit0:i386 \
-    libtasn1-6:i386 \
-    libnettle8:i386 \
-    libhogweed6:i386 \
-    libgcrypt20:i386 \
-    libgpg-error0:i386 \
-    libkrb5-3:i386 \
-    libk5crypto3:i386 \
-    libcom-err2:i386 \
-    libkrb5support0:i386 \
-    libkeyutils1:i386 \
-    libldap-2.4-2:i386 \
+    libldap-2.5-2:i386 \
     libsasl2-2:i386 \
     libgnutls30:i386 \
     libp11-kit0:i386 \
