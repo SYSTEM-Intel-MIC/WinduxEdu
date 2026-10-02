@@ -8,6 +8,12 @@ if [ ! -d "$EDU_DIR" ] || ! ls "$EDU_DIR"/*.deb >/dev/null 2>&1; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
+# Add i386 architecture and update sources.list for multiarch support
+# The live-build chroot sources.list is generated from lb config mirrors without architecture specification
+dpkg --add-architecture i386
+sed -i 's/^deb /deb [arch=amd64,i386] /' /etc/apt/sources.list
+sed -i 's/^deb-src /deb-src [arch=amd64,i386] /' /etc/apt/sources.list
+apt-get update
 
 # Create dpkg pre-inst hook to force HOME=/root for all postinsts
 mkdir -p /etc/dpkg/pre-inst.d
