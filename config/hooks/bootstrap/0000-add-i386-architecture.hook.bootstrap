@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+# Add i386 architecture early in the bootstrap phase so that
+# multiarch packages are available during chroot package installation.
+# This runs before any packages are installed, ensuring i386 packages
+# from package lists (e.g., winduxedu-compat.list.chroot) are fetched.
+
+export DEBIAN_FRONTEND=noninteractive
+dpkg --add-architecture i386
+apt-get update

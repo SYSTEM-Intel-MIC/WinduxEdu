@@ -8,17 +8,10 @@ if [ ! -d "$EDU_DIR" ] || ! ls "$EDU_DIR"/*.deb >/dev/null 2>&1; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-dpkg --add-architecture i386
-# Use debian mirror with explicit i386 architecture - ensure apt fetches i386 packages
-cat > /etc/apt/sources.list <<'EOF'
-deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb [arch=amd64,i386] http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-EOF
-apt-get update
+# i386 architecture is already added by bootstrap hook 0000-add-i386-architecture
 # Verify i386 packages are available
 apt-cache policy libgpg-error0:i386 >/dev/null 2>&1 || {
-    echo "ERROR: i386 packages not available after apt-get update" >&2
+    echo "ERROR: i386 packages not available" >&2
     exit 1
 }
 
