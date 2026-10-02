@@ -9,13 +9,18 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 dpkg --add-architecture i386
-# Rewrite sources.list with explicit i386 architecture support
+# Use debian mirror with explicit i386 architecture - ensure apt fetches i386 packages
 cat > /etc/apt/sources.list <<'EOF'
 deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
 deb [arch=amd64,i386] http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-deb [arch=amd64,i386] http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
 EOF
 apt-get update
+# Verify i386 packages are available
+apt-cache policy libgpg-error0:i386 >/dev/null 2>&1 || {
+    echo "ERROR: i386 packages not available after apt-get update" >&2
+    exit 1
+}
 
 # Create dpkg pre-inst hook to force HOME=/root for all postinsts
 mkdir -p /etc/dpkg/pre-inst.d
