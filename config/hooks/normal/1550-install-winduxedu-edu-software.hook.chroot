@@ -8,12 +8,6 @@ if [ ! -d "$EDU_DIR" ] || ! ls "$EDU_DIR"/*.deb >/dev/null 2>&1; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-# i386 architecture is already added by bootstrap hook 0000-add-i386-architecture
-# Verify i386 packages are available
-apt-cache policy libgpg-error0:i386 >/dev/null 2>&1 || {
-    echo "ERROR: i386 packages not available" >&2
-    exit 1
-}
 
 # Create dpkg pre-inst hook to force HOME=/root for all postinsts
 mkdir -p /etc/dpkg/pre-inst.d

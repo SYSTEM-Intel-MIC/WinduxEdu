@@ -161,7 +161,7 @@ jobs:
             --initramfs live-boot \
             --initsystem systemd \
             --distribution bookworm \
-            --architectures amd64 i386 \
+            --architectures amd64 \
             --linux-packages linux-image \
             --archive-areas "main contrib non-free non-free-firmware" \
             --mirror-bootstrap "http://deb.debian.org/debian" \
@@ -191,13 +191,13 @@ jobs:
 
           sudo mkdir -p config/archives
           cat <<'EOF' | sudo tee config/archives/winduxedu.list.chroot
-          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-          deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          deb [arch=amd64,i386] http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
           EOF
           cat <<'EOF' | sudo tee config/archives/winduxedu.list.binary
-          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-          deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           EOF
           sudo chmod 755 config/hooks/*.chroot \
             config/includes.chroot/usr/local/bin/winduxedu-installer \
