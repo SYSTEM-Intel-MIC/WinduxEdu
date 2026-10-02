@@ -220,8 +220,11 @@ jobs:
           set -euxo pipefail
           echo "WinduxEdu build started: $(date --iso-8601=seconds)" | tee build.log
           sudo lb bootstrap 2>&1 | tee -a build.log
-          # Add i386 architecture to the bootstrap system so that chroot phase can install i386 packages
+          # Add i386 architecture to the chroot's dpkg and update sources.list with [arch=amd64,i386]
+          # before running lb chroot, so that chroot phase can install i386 packages from package lists
           sudo chroot chroot dpkg --add-architecture i386
+          sudo sed -i 's/^deb /deb [arch=amd64,i386] /' chroot/etc/apt/sources.list
+          sudo sed -i 's/^deb-src /deb-src [arch=amd64,i386] /' chroot/etc/apt/sources.list
           sudo chroot chroot apt-get update
           sudo lb chroot 2>&1 | tee -a build.log
           sudo lb binary 2>&1 | tee -a build.log
