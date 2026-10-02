@@ -18,7 +18,7 @@ apt-get install -y --no-install-recommends \
     wine wine32 wine64 libwine libwine:i386 fonts-wine
 
 # Wine 32-bit library dependencies (i386 architecture)
-# Note: libldap in Bookworm is libldap-2.5-2, not libldap-2.4-2
+# Note: libldap in Bookworm is libldap-2.5-0, not libldap-2.4-2
 apt-get install -y --no-install-recommends \
     libasound2:i386 \
     libasound2-plugins:i386 \
