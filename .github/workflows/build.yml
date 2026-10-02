@@ -161,19 +161,9 @@ jobs:
             --initramfs live-boot \
             --initsystem systemd \
             --distribution bookworm \
-            --architectures amd64 i386 \
+            --architectures amd64 \
             --linux-packages linux-image \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --mirror-bootstrap "http://deb.debian.org/debian" \
-            --parent-mirror-bootstrap "http://deb.debian.org/debian" \
-            --mirror-chroot "http://deb.debian.org/debian" \
-            --parent-mirror-chroot "http://deb.debian.org/debian" \
-            --mirror-chroot-security "http://security.debian.org/debian-security" \
-            --parent-mirror-chroot-security "http://security.debian.org/debian-security" \
-            --mirror-binary "http://deb.debian.org/debian" \
-            --parent-mirror-binary "http://deb.debian.org/debian" \
-            --mirror-binary-security "http://security.debian.org/debian-security" \
-            --parent-mirror-binary-security "http://security.debian.org/debian-security" \
             --security false \
             --mirror-debian-installer "http://deb.debian.org/debian" \
             --keyring-packages "debian-archive-keyring" \
@@ -189,7 +179,12 @@ jobs:
             --apt-recommends false \
             --debian-installer false
 
-          sudo mkdir -p config/archives
+          sudo mkdir -p config/apt config/archives
+          cat <<'EOF' | sudo tee config/apt/sources.list
+          deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          deb [arch=amd64,i386] http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          EOF
           cat <<'EOF' | sudo tee config/archives/winduxedu.list.binary
           deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
@@ -219,15 +214,7 @@ jobs:
         run: |
           set -euxo pipefail
           echo "WinduxEdu build started: $(date --iso-8601=seconds)" | tee build.log
-          sudo lb bootstrap 2>&1 | tee -a build.log
-          # Add i386 architecture to the chroot's dpkg and update sources.list with [arch=amd64,i386]
-          # before running lb chroot, so that chroot phase can install i386 packages from package lists
-          sudo chroot chroot dpkg --add-architecture i386
-          sudo sed -i 's/^deb /deb [arch=amd64,i386] /' chroot/etc/apt/sources.list
-          sudo sed -i 's/^deb-src /deb-src [arch=amd64,i386] /' chroot/etc/apt/sources.list
-          sudo chroot chroot apt-get update
-          sudo lb chroot 2>&1 | tee -a build.log
-          sudo lb binary 2>&1 | tee -a build.log
+          sudo lb build 2>&1 | tee -a build.log
 
           # Use the same repack implementation locally and in CI. It retains the
           # matching ISOLINUX tree and injects an x86_64 EFI System Partition.
