@@ -8,15 +8,7 @@ if [ ! -d "$EDU_DIR" ] || ! ls "$EDU_DIR"/*.deb >/dev/null 2>&1; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-# Add i386 architecture and rewrite sources.list for multiarch support
-# The live-build chroot sources.list is generated from lb config mirrors without architecture specification
-dpkg --add-architecture i386
-cat > /etc/apt/sources.list <<'EOF'
-deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-deb [arch=amd64,i386] http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-EOF
-apt-get update
+# i386 architecture is already added by bootstrap hook 0000-add-i386-architecture
 
 # Create dpkg pre-inst hook to force HOME=/root for all postinsts
 mkdir -p /etc/dpkg/pre-inst.d
