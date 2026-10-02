@@ -189,8 +189,8 @@ jobs:
             --apt-recommends false \
             --debian-installer false
 
-          sudo mkdir -p config/archives
-          cat <<'EOF' | sudo tee config/archives/winduxedu.list.chroot
+          sudo mkdir -p config/archives config/apt
+          cat <<'EOF' | sudo tee config/apt/sources.list
           deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           deb [arch=amd64,i386] http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
