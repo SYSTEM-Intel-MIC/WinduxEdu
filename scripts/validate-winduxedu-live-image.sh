@@ -405,19 +405,21 @@ fi
 # an empty /home.  Hook 1550 re-runs it; these are the members that made the
 # bundled web view die with a GLIBC_... symbol lookup error against the system
 # libgtk-3.so.0.
-DT_RELEASE_DIR=
-for dt_dir in "$FULL_ROOT"/opt/apps/com.alibabainc.dingtalk/files/*/; do
-    [ -d "$dt_dir" ] || continue
-    DT_RELEASE_DIR="$dt_dir"
-    break
-done
-[ -n "$DT_RELEASE_DIR" ] || {
+DT_FILES_ROOT="$FULL_ROOT/opt/apps/com.alibabainc.dingtalk/files"
+[ -d "$DT_FILES_ROOT" ] || {
     echo 'DingTalk release directory is missing from the final image' >&2
     exit 1
 }
+# files/ carries the versioned release next to Chromium's locales/crashpad/...
+# siblings, so no single child directory may be taken as "the" release: the
+# whole tree is what ships, and the whole tree is what gets checked.
+if [ -z "$(find "$DT_FILES_ROOT" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) -print -quit)" ]; then
+    echo 'DingTalk ships no release directory in the final image' >&2
+    exit 1
+fi
 for stale in libm.so.6 libstdc++.so.6 libstdc++.so.6.0.25 \
     libgbm.so.1.0.0 libGLX.so.0.0.0 libGLdispatch.so.0.0.0; do
-    if [ -e "$DT_RELEASE_DIR$stale" ]; then
+    if [ -n "$(find "$DT_FILES_ROOT" -name "$stale" \( -type f -o -type l \) -print -quit)" ]; then
         echo "DingTalk still ships an incompatible bundled library: $stale" >&2
         exit 1
     fi

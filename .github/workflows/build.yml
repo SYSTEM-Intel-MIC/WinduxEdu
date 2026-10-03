@@ -384,6 +384,56 @@ jobs:
           EOF
           ls -lh "$ISO" WinduxEdu-1.0-amd64-livecd.iso.sha256 WinduxEdu-1.0-release-notes.md build.log
 
+      - name: Diagnose ISO verification
+        # Runs only after a failure.  The verifier stops at the first problem it
+        # finds, and every problem it has not reached yet would otherwise cost
+        # another full build to discover.  Re-open the finished squashfs and
+        # print the remaining suspects -- PDF handler registration, DingTalk's
+        # bundled libraries and session/power desktop entries -- in one pass.
+        if: failure()
+        run: |
+          set -uo pipefail
+          SQUASH="$(find binary -name filesystem.squashfs -type f 2>/dev/null | head -n1 || true)"
+          if [ -z "$SQUASH" ]; then
+            ISO_GUESS="$(find . -maxdepth 2 -name '*.iso' -type f 2>/dev/null | head -n1 || true)"
+            [ -n "$ISO_GUESS" ] || { echo 'no squashfs and no ISO left to diagnose'; exit 0; }
+            SQUASH=/tmp/filesystem.squashfs
+            sudo xorriso -osirrox on -indev "$ISO_GUESS" -extract /live/filesystem.squashfs "$SQUASH" >/dev/null 2>&1 || {
+              echo 'could not extract the squashfs from the ISO'; exit 0; }
+          fi
+          DIAG=/tmp/winduxedu-verify-diag
+          sudo rm -rf "$DIAG"
+          sudo unsquashfs -d "$DIAG" "$SQUASH" \
+            'etc/xdg/mimeapps.list' \
+            'usr/share/applications/*' \
+            'usr/local/share/applications/*' \
+            'opt/apps/com.alibabainc.dingtalk/*' >/dev/null 2>&1 || true
+
+          echo '===== application/pdf defaults ====='
+          sudo grep -R --include='mimeapps.list' '^application/pdf=' "$DIAG/etc" 2>/dev/null || echo 'no application/pdf entry anywhere'
+          echo '===== ONLYOFFICE desktop MimeType ====='
+          sudo grep -R --include='*.desktop' -H '^MimeType=' "$DIAG/usr" 2>/dev/null | grep -i onlyoffice || echo 'no ONLYOFFICE desktop with a MimeType line'
+
+          echo '===== DingTalk files layout ====='
+          sudo find "$DIAG/opt/apps/com.alibabainc.dingtalk/files" -maxdepth 2 2>/dev/null | sort | head -80 || echo 'no DingTalk files tree'
+          echo '===== DingTalk stale bundled libraries ====='
+          sudo find "$DIAG/opt/apps/com.alibabainc.dingtalk/files" \
+            \( -name 'libm.so.6' -o -name 'libstdc++.so.6*' -o -name 'libgbm.so*' \
+               -o -name 'libGLX.so*' -o -name 'libGLdispatch.so*' \) \
+            \( -type f -o -type l \) -print 2>/dev/null || true
+
+          echo '===== forbidden session/power desktop entries (Name/Comment) ====='
+          sudo grep -rEiH \
+            '^(Name|Name\[zh_CN\]|GenericName|Comment)=.*(Shutdown|Shut Down|Power Off|Restart|Reboot|Log ?Out|Logoff|Logout|Suspend|Sleep|Hibernate|Lock Screen|Lock Session|关机|重启|重新启动|注销|登出|睡眠|挂起|休眠|锁屏|锁定)' \
+            "$DIAG/usr/share/applications" "$DIAG/usr/local/share/applications" 2>/dev/null || echo 'none'
+          echo '===== forbidden session/power desktop entries (Exec) ====='
+          sudo grep -rEiH \
+            '^Exec=.*(systemctl[[:space:]]+(poweroff|reboot|suspend|hibernate)|loginctl[[:space:]]+(poweroff|reboot|suspend|hibernate|terminate-session|lock-session)|lxqt-leave|xfce4-session-logout|mate-session-save|openbox[[:space:]]+--exit|gnome-session-quit|(^|[[:space:]])(poweroff|reboot|shutdown|logout|logoff|xscreensaver-command|dm-tool)[[:space:]])' \
+            "$DIAG/usr/share/applications" "$DIAG/usr/local/share/applications" 2>/dev/null || echo 'none'
+
+          sudo rm -rf "$DIAG"
+          df -h / || true
+
       - name: Smoke boot WinduxEdu 1.0 ISO in QEMU BIOS and UEFI
         run: |
           set -euxo pipefail

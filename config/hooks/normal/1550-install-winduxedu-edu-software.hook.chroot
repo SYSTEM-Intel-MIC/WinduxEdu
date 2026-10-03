@@ -309,34 +309,44 @@ fi
 # --- 钉钉 (task: DingTalk never started) ---------------------------------
 # Elevator.sh puts the bundled library directory first on LD_LIBRARY_PATH, so
 # a stale vendor library wins over the system one.  The vendor's own postinst
-# removes exactly the members that are older than a modern glibc (libm.so.6,
-# libgbm*, libstdc++.so.6(.0.25), the GLVND stubs, bundled harfbuzz) -- but
-# only inside `for file in $(ls /home)`, which never executes while the image
-# still has an empty /home.  Bookworm runs glibc 2.36, so all of those removals
-# apply here; without them the system libgtk-3.so.0 dragged in by the bundled
-# web view dies with "GLIBC_2.3x not found".
-DT_RELEASE="$(find /opt/apps/com.alibabainc.dingtalk/files -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n 1)"
-if [ -z "$DT_RELEASE" ]; then
+# is meant to remove exactly the members that are older than a modern glibc
+# (libm.so.6, libgbm*, libstdc++.so.6(.0.25), the GLVND stubs, bundled
+# harfbuzz), but that loop is buried behind `for file in $(ls /home)` and it
+# demonstrably left libstdc++.so.6 in the image we ship.  Bookworm runs
+# glibc 2.36, so all of those removals apply here; without them the system
+# libgtk-3.so.0 dragged in by the bundled web view dies with
+# "GLIBC_2.3x not found".
+DT_FILES=/opt/apps/com.alibabainc.dingtalk/files
+if [ ! -d "$DT_FILES" ]; then
     echo "DingTalk release directory is missing" >&2
     exit 1
 fi
-for stale in libm.so.6 \
-             libstdc++.so.6 libstdc++.so.6.0.25 \
-             libgbm.so libgbm.so.1 libgbm.so.1.0.0 \
-             libGLX.so libGLX.so.0 libGLX.so.0.0.0 \
-             libGLdispatch.so libGLdispatch.so.0 libGLdispatch.so.0.0.0 \
-             libffi.so.6.0.4 \
-             libharfbuzz.so libharfbuzz.so.0 libharfbuzz.so.0.20301.0; do
-    rm -f "$DT_RELEASE/$stale"
-done
+# files/ holds several directories -- the versioned release next to
+# Chromium's locales/crashpad/... siblings -- and readdir order has nothing
+# to do with the sorted order a later reader of the image uses.  Picking "the
+# first" directory therefore cleans and verifies a different one than the
+# verifier inspects, which let the stale members survive into the ISO while
+# this hook happily reported success.  Sweep every level, then verify every
+# level, and print the layout so the build log carries the ground truth.
+echo "DingTalk files layout:"
+find "$DT_FILES" -maxdepth 2 -type d -print | sort | head -n 40
+find "$DT_FILES" \( \
+        -name 'libm.so.6' -o \
+        -name 'libstdc++.so.6*' -o \
+        -name 'libgbm.so*' -o \
+        -name 'libGLX.so*' -o \
+        -name 'libGLdispatch.so*' -o \
+        -name 'libffi.so.6.0.4' -o \
+        -name 'libharfbuzz.so*' \) \
+    \( -type f -o -type l \) -delete
 # The same skipped loop is what chmod's the Chromium sandbox helper; without
 # the setuid bit the bundled web view refuses to start at all.
-if [ -f "$DT_RELEASE/chrome-sandbox" ]; then
-    chmod 4755 "$DT_RELEASE/chrome-sandbox"
-fi
-for gone in libm.so.6 libstdc++.so.6; do
-    if [ -e "$DT_RELEASE/$gone" ]; then
-        echo "DingTalk still ships an incompatible bundled $gone" >&2
+find "$DT_FILES" -name chrome-sandbox -type f -exec chmod 4755 {} +
+for stale in libm.so.6 libstdc++.so.6 libstdc++.so.6.0.25 \
+    libgbm.so.1.0.0 libGLX.so.0.0.0 libGLdispatch.so.0.0.0; do
+    hit="$(find "$DT_FILES" -name "$stale" \( -type f -o -type l \) -print -quit)"
+    if [ -n "$hit" ]; then
+        echo "DingTalk still ships an incompatible bundled library: $stale" >&2
         exit 1
     fi
 done
