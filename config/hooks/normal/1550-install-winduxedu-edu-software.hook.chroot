@@ -12,6 +12,20 @@ export DEBIAN_FRONTEND=noninteractive
 dpkg --add-architecture i386
 apt-get update
 
+# live-build compresses the rootfs squashfs during lb_binary_rootfs and only
+# re-enters the chroot afterwards to run its binary-stage `apt-get upgrade`
+# / `dist-upgrade` (chroot_archives binary install). Whenever bookworm-security
+# carries a newer linux-image than the chroot picked up from bookworm, that
+# late upgrade drops a second kernel into /boot. lb_binary_linux-image then
+# copies both into binary/live and live-build's syslinux step aborts on its
+# multi-source `mv binary/live/vmlinuz-* binary/live/vmlinuz` with:
+#   mv: target 'binary/live/vmlinuz': No such file or directory
+# The squashfs has already been written with the older kernel at that point, so
+# shipping the newer one would leave the image without matching modules anyway.
+# Hold the kernel metapackages for the remainder of the build so both stages
+# agree on exactly one kernel.
+apt-mark hold linux-image-amd64 linux-headers-amd64
+
 # Install Wine 11 stack and all i386 dependencies (moved from package list)
 # Core Wine packages
 apt-get install -y --no-install-recommends \
