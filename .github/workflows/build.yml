@@ -214,7 +214,20 @@ jobs:
         run: |
           set -euxo pipefail
           echo "WinduxEdu build started: $(date --iso-8601=seconds)" | tee build.log
-          sudo lb build 2>&1 | tee -a build.log
+          # Rootfs squashfs compression.  live-build only ever appends its
+          # hard-coded "-comp xz", so mksquashfs keeps its 128 KiB default block
+          # and dictionary, and this ~13 GB rootfs lands above the ISO9660
+          # 4 GiB-1 per-file limit (/live/filesystem.squashfs is that file).
+          # lb_binary_rootfs expands MKSQUASHFS_OPTIONS on the host before it is
+          # passed into the chroot, so exporting it tunes the compressor without
+          # patching live-build: 512 KiB blocks/dictionary plus the x86 BCJ
+          # filter measured 7.9% smaller than the defaults on a comparable
+          # rootfs tree.  "-comp xz" is repeated first so a squashfs-tools build
+          # that validates -X options eagerly still sees the right compressor;
+          # Debian bookworm's kernel has CONFIG_XZ_DEC_X86=y, so the filter is
+          # decoded at boot.
+          sudo env MKSQUASHFS_OPTIONS="-comp xz -b 524288 -Xdict-size 524288 -Xbcj x86" \
+            lb build 2>&1 | tee -a build.log
 
           # Use the same repack implementation locally and in CI. It retains the
           # matching ISOLINUX tree and injects an x86_64 EFI System Partition.
@@ -241,6 +254,23 @@ jobs:
             exit 1
           fi
           echo "WinduxEdu dual BIOS/UEFI ISO finished: $(date --iso-8601=seconds)" | tee -a build.log
+
+      - name: Diagnose rootfs size
+        # Runs only after a failure, while the chroot is still on disk (the
+        # cleanup step at the end of the job wipes it).  When the rootfs
+        # outgrows the ISO9660 4 GiB-1 per-file limit, genisoimage aborts on
+        # /live/filesystem.squashfs without saying which part of the rootfs to
+        # trim, so print the size breakdown here instead.
+        if: failure()
+        run: |
+          set -uo pipefail
+          sudo du -x -m --max-depth=3 chroot/chroot 2>/dev/null | sort -n | tail -80 || true
+          sudo du -x -m chroot/chroot/var/cache/apt/archives \
+            chroot/chroot/var/lib/apt/lists \
+            chroot/chroot/usr/share/doc \
+            chroot/chroot/usr/share/man \
+            chroot/chroot/usr/share/locale 2>/dev/null || true
+          df -h / || true
 
       - name: Verify WinduxEdu ISO
         id: iso
