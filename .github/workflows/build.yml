@@ -446,6 +446,14 @@ jobs:
           bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" uefi 420
 
       - name: Upload QEMU visual diagnostics on completion or failure
+        # Best effort.  This step runs on every job (if: always()), and the
+        # repository's Actions artifact storage quota is a billing limit, not a
+        # property of the image: run #48 built, verified and smoke-booted the
+        # ISO in both firmware modes, then went red on
+        #   Failed to CreateArtifact: Artifact storage quota has been hit.
+        # Diagnostics frames must never be able to fail an otherwise green
+        # build; the Preview Release below is the actual deliverable.
+        continue-on-error: true
         if: always()
         uses: actions/upload-artifact@v4
         with:
