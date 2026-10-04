@@ -1,1 +1,8 @@
 openssh-server
+# initramfs-tools compresses the initrd with $COMPRESS, and the image sets
+# zstd.  --apt-recommends false drops zstd from the transaction (it is only a
+# Recommends of initramfs-tools), so every kernel install printed
+#   W: No zstd in /usr/bin:/sbin:/bin, using gzip
+# and shipped a gzip initrd next to a zstd expectation.  Install it explicitly
+# so the compression the configuration asks for actually exists.
+zstd

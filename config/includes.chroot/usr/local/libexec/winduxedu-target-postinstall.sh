@@ -29,6 +29,19 @@ fi
 install -Dm644 /dev/stdin /etc/winduxedu/session-user <<EOF
 $installed_account
 EOF
+
+# The installer's "免密码登录" checkbox is applied by Calamares only as group
+# membership: Config::groupsForThisUser() appends `autologinGroup` (autologin)
+# solely when doAutoLogin() is set, and the displaymanager module then writes
+# a config for a greeter WinduxEdu does not ship, so the choice would be lost
+# and ElevenDE's own login gate would still ask for a password.  Turn the
+# group back into the signal elevende-session reads.
+rm -f /etc/winduxedu/autologin
+if id -nG "$installed_account" 2>/dev/null | tr ' ' '\n' | grep -qx autologin; then
+    install -Dm644 /dev/stdin /etc/winduxedu/autologin <<'EOF'
+Installed account was created with password-free automatic login.
+EOF
+fi
 if command -v systemctl >/dev/null 2>&1; then
     systemctl enable winduxedu-installed-cleanup.service >/dev/null 2>&1 || true
     # Replace anything occupying the .wants path (a flattened regular file

@@ -276,7 +276,9 @@ QWidget *buildEduPage()
     v->addWidget(xCard(QStringLiteral("希沃"),
                        eduToggleRow(QStringLiteral("希沃管家开机自启"),
                                     QStringLiteral("建议希沃一体机开启，其它设备关闭；"
-                                                   "同时接管希沃的开机自启组件。"),
+                                                   "开关的是登录后是否自动弹出希沃管家窗口，"
+                                                   "其后端服务始终可用，从开始菜单手动打开"
+                                                   "不受此开关影响。"),
                                     QStringLiteral("seewo-autostart"),
                                     false,
                                     state)));

@@ -15,14 +15,15 @@ path = Path(sys.argv[1]) if len(sys.argv) == 2 else None
 if path is None or not path.is_file():
     raise SystemExit("usage: patch-elevende-session-policy.py PATH/TO/session/elevende-session")
 
-HELPER_STOP = '''    # WinduxEdu session helpers (touch mapping, screen keyboard, Seewo
-    # toolbar) write a pid file; only signal a process that is still that
-    # helper, never a recycled pid.
-    for h in winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar; do
+HELPER_STOP = '''    # WinduxEdu session helpers (touch mapping, screen keyboard, Seewo toolbar,
+    # removable-media autorun) write a pid file; only signal a process that is
+    # still that helper, never a recycled pid.  $h already carries the
+    # winduxedu- prefix, so the cmdline check matches the helper's own path.
+    for h in winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar winduxedu-media-notify; do
         [ -f "/tmp/winduxedu-$h.pid" ] || continue
         hpid="$(cat "/tmp/winduxedu-$h.pid" 2>/dev/null)"
         if [ -n "$hpid" ] && [ -r "/proc/$hpid/cmdline" ] && \\
-                grep -aq "winduxedu-$h" "/proc/$hpid/cmdline" 2>/dev/null; then
+                grep -aq "$h" "/proc/$hpid/cmdline" 2>/dev/null; then
             kill "$hpid" 2>/dev/null
         fi
         rm -f "/tmp/winduxedu-$h.pid"
@@ -39,7 +40,7 @@ new = '''# WINDUXEDU session helpers start before the login gate: the screen key
 # has to be available while the lock screen asks for a password, and the
 # touchscreen mapping must be in place before anyone touches the display.
 start_winduxedu_helpers() {
-    for h in winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar; do
+    for h in winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar winduxedu-media-notify; do
         [ -x "/usr/local/bin/$h" ] || continue
         echo "winduxedu: starting $h"
         /usr/local/bin/$h >>"/tmp/winduxedu-$h.log" 2>&1 &
@@ -50,8 +51,14 @@ start_winduxedu_helpers
 
 # WINDUXEDU-SESSION-POLICY: Live media enters its disposable user session
 # directly. Installed systems retain ElevenDE's own Win11-style login gate;
-# no external display-manager greeter is involved.
+# no external display-manager greeter is involved.  The one exception is the
+# installer's "免密码登录" choice: Calamares records it by putting the created
+# account in the `autologin` group, which winduxedu-target-postinstall turns
+# into /etc/winduxedu/autologin.  Honouring that here is what makes the
+# checkbox effective instead of leaving the ElevenDE gate asking for a
+# password anyway.
 if [ "${WINDUXEDU_LIVE_SESSION:-0}" != "1" ] && [ ! -d /run/live ] && \\
+        [ ! -f /etc/winduxedu/autologin ] && \\
         [ -x /usr/local/bin/elevende-lock ]; then
     echo "elevende-session: ElevenDE native login gate"
     /usr/local/bin/elevende-lock --login || true
@@ -148,9 +155,18 @@ new_locale = '''# WinduxEdu is Chinese-first.  Keep desktop entry localization a
 export LANG=zh_CN.UTF-8
 export LC_ALL=zh_CN.UTF-8
 export LANGUAGE=zh_CN:zh
+
+# The Chinese input method must be reachable from the very first keystroke of
+# the session.  ElevenDE is started by a systemd service through runuser, so it
+# sources neither /etc/profile nor /etc/X11/Xsession.d; the fcitx5 profile
+# snippets alone therefore never reach any application the shell starts.
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export SDL_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
 '''
 if old_locale not in text:
     raise SystemExit("ElevenDE session locale marker was not found")
 text = text.replace(old_locale, new_locale, 1)
 path.write_text(text, encoding="utf-8")
-print("patched ElevenDE session for Live bypass, native login and zh_CN locale")
+print("patched ElevenDE session for Live bypass, native login, IM and zh_CN locale")

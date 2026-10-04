@@ -129,5 +129,91 @@ if new_dedupe not in text:
         raise SystemExit("WinduxEdu menu dedupe marker not found")
     text = text.replace(old_dedupe, new_dedupe, 1)
 
+# --- Start menu: outside-click dismissal -----------------------------------
+# ElevenDE 3.6 put the "press outside closes the menu" block behind an
+# `else if` that follows a branch which already matches XI_RawButtonPress, so
+# the block can never run.  The menu therefore stayed open over an
+# application window and kept swallowing presses that the window underneath
+# should have received, which is what reads as "开始菜单点击失效".
+old_dismiss = '''                    if (ck->evtype == XI_RawButtonPress) phys_btn = 1;
+                    else if (ck->evtype == XI_RawButtonRelease) phys_btn = 0;
+                    else if (ck->evtype == XI_RawKeyPress && ck->data) {
+                        XIRawEvent *re = (XIRawEvent *)ck->data;
+                        if (super_down && re->detail != k_win1 &&
+                            re->detail != k_win2)
+                            super_combo = 1;   /* Win+<something> combo */
+                    }
+                    else if (ck->evtype == XI_RawButtonPress) {
+                        /* Win11 behavior without any pointer grab: a
+                         * physical press OUTSIDE our UI closes the Start
+                         * menu / search / flyouts. Raw events see every
+                         * press regardless of which window receives it. */
+                        if ((menu_visible || search_visible || ctx_visible ||
+                             pinm_visible) && !pointer_over_own_ui())
+                            menu_hide();     /* hides power/pinm/ctx too */
+                        if (net_visible && !pointer_over_own_ui())
+                            net_hide();      /* quick-settings panel */
+                    }
+'''
+new_dismiss = '''                    if (ck->evtype == XI_RawButtonPress) {
+                        phys_btn = 1;
+                        /* Win11 behavior without any pointer grab: a
+                         * physical press OUTSIDE our UI closes the Start
+                         * menu / search / flyouts. Raw events see every
+                         * press regardless of which window receives it.
+                         * WinduxEdu: this branch used to sit behind an
+                         * `else if` that followed a branch already matching
+                         * XI_RawButtonPress, i.e. it was unreachable. */
+                        if ((menu_visible || search_visible || ctx_visible ||
+                             pinm_visible) && !pointer_over_own_ui())
+                            menu_hide();     /* hides power/pinm/ctx too */
+                        if (net_visible && !pointer_over_own_ui())
+                            net_hide();      /* quick-settings panel */
+                    }
+                    else if (ck->evtype == XI_RawButtonRelease) phys_btn = 0;
+                    else if (ck->evtype == XI_RawKeyPress && ck->data) {
+                        XIRawEvent *re = (XIRawEvent *)ck->data;
+                        if (super_down && re->detail != k_win1 &&
+                            re->detail != k_win2)
+                            super_combo = 1;   /* Win+<something> combo */
+                    }
+'''
+if new_dismiss not in text:
+    if old_dismiss not in text:
+        raise SystemExit("WinduxEdu menu outside-dismiss marker not found")
+    text = text.replace(old_dismiss, new_dismiss, 1)
+
+# --- Start menu: a tap must never be cancelled before its own release ------
+# gp_tick() treats "XQueryPointer says the button is up" as "the release was
+# lost" and disarms the gesture.  The release is frequently still sitting in
+# our own socket at that point: press and release are dispatched at the top of
+# the loop, the redraw/refresh work in between can take milliseconds, and a
+# quick touchscreen tap lands its release inside that window.  The queued
+# release then found gp_kind == GP_NONE and launched nothing, so the tap in the
+# All apps list simply did nothing.  Give up only when there is nothing left
+# to read, and never start a long-press once the button is already up.
+old_tick = '''    {
+        Window rr, cr; int rx, ry, wx, wy; unsigned int m = 0;
+        if (XQueryPointer(dpy, root, &rr, &cr, &rx, &ry, &wx, &wy, &m) &&
+            !(m & Button1Mask)) { gp_reset(); return; }
+    }
+'''
+new_tick = '''    {
+        Window rr, cr; int rx, ry, wx, wy; unsigned int m = 0;
+        if (XQueryPointer(dpy, root, &rr, &cr, &rx, &ry, &wx, &wy, &m) &&
+            !(m & Button1Mask)) {
+            /* The server may already know the button is up while the release
+             * event itself is still unread in our socket; cancelling here
+             * would swallow that tap. */
+            if (!XPending(dpy)) gp_reset();
+            return;
+        }
+    }
+'''
+if new_tick not in text:
+    if old_tick not in text:
+        raise SystemExit("WinduxEdu menu tap-safety marker not found")
+    text = text.replace(old_tick, new_tick, 1)
+
 path.write_text(text)
 print(f"patched WinduxEdu menu policy in {path}")

@@ -180,25 +180,42 @@ jobs:
             --apt-recommends false \
             --debian-installer false
 
-          sudo mkdir -p config/apt config/archives
-          cat <<'EOF' | sudo tee config/apt/sources.list
-          deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-          deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-          deb [arch=amd64,i386] http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-          EOF
+          sudo mkdir -p config/archives
+          # live-build owns /etc/apt/sources.list: it generates the mirror,
+          # bookworm and bookworm-updates lines from --mirror-debian for both
+          # the chroot and the shipped image.  Supplying a second copy of those
+          # suites (through config/apt/sources.list or an extra
+          # config/archives list) is what made apt answer every component
+          # twice:
+          #   W: Target Packages (non-free-firmware/binary-amd64/Packages) is
+          #      configured multiple times in /etc/apt/sources.list:8 and ...
+          # --security false keeps bookworm-security out of the generated
+          # list, so this single line is the only suite WinduxEdu may add
+          # without colliding with it.
           cat <<'EOF' | sudo tee config/archives/winduxedu.list.binary
-          deb [arch=amd64,i386] http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           EOF
+          # Every WinduxEdu helper must be executable inside the image, not
+          # only the handful that used to be listed one by one: the education
+          # settings page, the touchscreen calibrator, the on-screen keyboard
+          # and the Seewo toolbar are started through QProcess::start() and
+          # silently return empty on EACCES when their git mode stays 644.
           sudo chmod 755 config/hooks/*.chroot \
-            config/includes.chroot/usr/local/bin/winduxedu-installer \
-            config/includes.chroot/usr/local/bin/winduxedu-power-action \
-            config/includes.chroot/usr/local/bin/winduxedu-logout \
-            config/includes.chroot/usr/local/sbin/winduxedu-live-session-init \
-            config/includes.chroot/usr/local/sbin/winduxedu-elevende-display \
-            config/includes.chroot/usr/local/sbin/winduxedu-smoke-diagnostics \
-            config/includes.chroot/usr/local/libexec/winduxedu-component-launch \
-            config/includes.chroot/usr/local/libexec/winduxedu-privileged-action
+            config/includes.chroot/usr/local/bin/* \
+            config/includes.chroot/usr/local/sbin/* \
+            config/includes.chroot/usr/local/libexec/*
+          # live-build still calls apt-get --force-yes for its chroot upgrade,
+          # which apt has deprecated since 2.0 and prints a warning for on
+          # every upgrade pass.  Rewrite only that flag wherever live-build
+          # uses it, keeping the rest of each command line untouched.
+          for dir in /usr/share/live /usr/lib/live /usr/share/live-build; do
+            [ -d "$dir" ] || continue
+            sudo grep -rl -- '--force-yes' "$dir" 2>/dev/null | while read -r f; do
+              sudo sed -i \
+                's/--force-yes/--allow-downgrades --allow-remove-essential --allow-change-held-packages --allow-unauthenticated/g' \
+                "$f"
+            done
+          done
           # Keep isolinux.bin and every COM32 runtime module from the same
           # syslinux package. In particular, isolinux.cfg -> vesamenu.c32
           # requires ldlinux.c32, libcom32.c32 and libutil.c32 at boot time.
@@ -446,62 +463,12 @@ jobs:
           bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" bios 420
           bash scripts/qemu-boot-smoke.sh "${{ steps.iso.outputs.iso_path }}" uefi 420
 
-      - name: Upload QEMU visual diagnostics on completion or failure
-        # Best effort.  This step runs on every job (if: always()), and the
-        # repository's Actions artifact storage quota is a billing limit, not a
-        # property of the image: run #48 built, verified and smoke-booted the
-        # ISO in both firmware modes, then went red on
-        #   Failed to CreateArtifact: Artifact storage quota has been hit.
-        # Diagnostics frames must never be able to fail an otherwise green
-        # build; the Preview Release below is the actual deliverable.
-        continue-on-error: true
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: WinduxEdu-1.0-qemu-visual-diagnostics-${{ github.run_number }}
-          path: |
-            WinduxEdu-1.0-amd64-livecd.iso.bios.ppm
-            WinduxEdu-1.0-amd64-livecd.iso.bios.early.ppm
-            WinduxEdu-1.0-amd64-livecd.iso.uefi.ppm
-            WinduxEdu-1.0-amd64-livecd.iso.uefi.early.ppm
-          if-no-files-found: warn
-          retention-days: 14
-          compression-level: 0
-
-      - name: Upload WinduxEdu ISO and verification artifacts
-        # Best effort: free-plan artifact storage (500 MB) cannot hold the ISO.
-        # The Preview Release below is the authoritative distribution channel.
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: WinduxEdu-1.0-amd64-livecd-with-installer-${{ github.run_number }}
-          path: |
-            ${{ steps.iso.outputs.iso_path }}
-            WinduxEdu-1.0-amd64-livecd.iso.sha256
-            WinduxEdu-1.0-release-notes.md
-            build.log
-            iso-boot-report.txt
-            WinduxEdu-1.0-amd64-livecd.iso.bios.ppm
-            WinduxEdu-1.0-amd64-livecd.iso.bios.early.ppm
-            WinduxEdu-1.0-amd64-livecd.iso.uefi.ppm
-            WinduxEdu-1.0-amd64-livecd.iso.uefi.early.ppm
-            artifacts/packages/SHA256SUMS
-            artifacts/packages/WINDUXEDU-1.0-BUILD-MANIFEST.json
-            artifacts/packages/WINDUXEDU-1.0-COMPONENTS.txt
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Upload component package set
-        # Best effort: component DEBs may exceed the free-plan artifact quota.
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: WinduxEdu-1.0-component-packages-${{ github.run_number }}
-          path: artifacts/packages/
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
+      # No actions/upload-artifact steps: the free plan's 500 MB artifact
+      # quota cannot hold the ISO (run #48 went red on
+      # "Artifact storage quota has been hit" after a green build), and the
+      # component DEBs are far larger still.  Everything worth distributing
+      # ships as a Preview Release asset below, so the quota stays reserved
+      # for the diagnostics frames a release cannot carry.
 
       - name: Publish WinduxEdu 1.0 Preview Release
         # Every green build (push or manual dispatch) publishes a tagged

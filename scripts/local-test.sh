@@ -104,22 +104,25 @@ sudo lb config \
     --debian-installer false
 
 sudo mkdir -p config/archives
+# live-build generates /etc/apt/sources.list itself (mirror + bookworm +
+# bookworm-updates).  Every line repeated here made apt report each component
+# twice, e.g.
+#   W: Target Packages (non-free-firmware/binary-amd64/Packages) is
+#      configured multiple times in /etc/apt/sources.list:8 and ...
+# --security false keeps bookworm-security out of the generated list, so the
+# security suite is the only one these lists may add.  Keep the CI and the
+# local build byte-identical here.
 cat <<'EOF' | sudo tee config/archives/winduxedu.list.chroot >/dev/null
-deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
 EOF
 cat <<'EOF' | sudo tee config/archives/winduxedu.list.binary >/dev/null
-deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
 EOF
 
 sudo chmod 755 config/hooks/*.chroot \
-    config/includes.chroot/usr/local/bin/winduxedu-installer \
-    config/includes.chroot/usr/local/sbin/winduxedu-live-session-init \
-    config/includes.chroot/usr/local/sbin/winduxedu-elevende-display \
-    config/includes.chroot/usr/local/sbin/winduxedu-smoke-diagnostics \
-    config/includes.chroot/usr/local/libexec/winduxedu-component-launch
+    config/includes.chroot/usr/local/bin/* \
+    config/includes.chroot/usr/local/sbin/* \
+    config/includes.chroot/usr/local/libexec/*
 sudo cp -f /usr/lib/ISOLINUX/isolinux.bin config/bootloaders/isolinux/isolinux.bin
 sudo cp -f /usr/lib/syslinux/modules/bios/*.c32 config/bootloaders/isolinux/
 

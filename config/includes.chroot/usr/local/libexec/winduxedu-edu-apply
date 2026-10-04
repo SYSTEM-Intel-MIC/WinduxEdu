@@ -58,20 +58,22 @@ remove_autostart() {
 # unconditionally: it is a vendor network-quirk unit, not a startup decision.
 apply_seewo() {
     if [ "$value" = 1 ]; then
-        unmask_unit com.seewo.terminalmanager.service
         unmask_unit com.cvte.maxhub.alfred.service
         if command -v systemctl >/dev/null 2>&1; then
-            systemctl enable com.seewo.terminalmanager.service >/dev/null 2>&1 || true
             systemctl enable com.cvte.maxhub.alfred.service >/dev/null 2>&1 || true
         fi
         restore_autostart com.seewo.terminalmanager.desktop
         restore_autostart com.cvte.maxhub.alfred.desktop
     else
-        mask_unit com.seewo.terminalmanager.service
         mask_unit com.cvte.maxhub.alfred.service
         remove_autostart com.seewo.terminalmanager.desktop
         remove_autostart com.cvte.maxhub.alfred.desktop
     fi
+    # com.seewo.terminalmanager.service is *not* part of this switch: it runs
+    # hugo_launcher, the backend the 希沃管家 window talks to.  Masking it made
+    # the window open and immediately fail with
+    # "Cannot read property 'data' of undefined", so it stays enabled and this
+    # key only decides whether the window itself is reopened at login.
 }
 
 # The third-party sidebar and its UDI dependency are internet-sourced,
@@ -111,6 +113,25 @@ sidebar_udi_wants() {
     fi
 }
 
+# Wants/mask links only take effect at the next login, which made 教育版设置 →
+# 侧边栏 look dead: flipping the switch changed nothing the user could see.
+# Apply it to the running session as well (user manager for every logged-in
+# account, system manager for the UDI dependency).  Best effort: on a system
+# without a per-user manager nothing is started, and the links still win at
+# the next login.
+sidebar_units_now() {
+    # $1 = start | stop
+    command -v systemctl >/dev/null 2>&1 || return 0
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl "$1" "$sidebar_udi_unit" >/dev/null 2>&1 || true
+    for u in $(who 2>/dev/null | awk '{print $1}' | sort -u); do
+        [ -n "$u" ] || continue
+        systemctl --user --machine="$u@" daemon-reload >/dev/null 2>&1 || true
+        systemctl --user --machine="$u@" "$1" "$sidebar_user_unit" \
+            >/dev/null 2>&1 || true
+    done
+}
+
 apply_sidebar() {
     if [ "$value" = 1 ]; then
         if [ -f "/usr/lib/systemd/user/$sidebar_user_unit" ]; then
@@ -119,9 +140,7 @@ apply_sidebar() {
         fi
         unmask_unit "$sidebar_udi_unit"
         sidebar_udi_wants add
-        if command -v systemctl >/dev/null 2>&1; then
-            systemctl daemon-reload >/dev/null 2>&1 || true
-        fi
+        sidebar_units_now start
         for f in "$SAVED"/*[sS]idebar*.desktop "$SAVED"/*UDI*.desktop "$SAVED"/*udi*.desktop; do
             [ -f "$f" ] || continue
             restore_autostart "$(basename "$f")"
@@ -132,9 +151,7 @@ apply_sidebar() {
         ln -sfn /dev/null "/etc/systemd/user/$sidebar_user_unit"
         mask_unit "$sidebar_udi_unit"
         sidebar_udi_wants del
-        if command -v systemctl >/dev/null 2>&1; then
-            systemctl daemon-reload >/dev/null 2>&1 || true
-        fi
+        sidebar_units_now stop
         for f in /etc/xdg/autostart/*[sS]idebar*.desktop /etc/xdg/autostart/*UDI*.desktop; do
             [ -f "$f" ] || continue
             remove_autostart "$(basename "$f")"

@@ -31,6 +31,14 @@ apt-mark hold linux-image-amd64 linux-headers-amd64
 apt-get install -y --no-install-recommends \
     wine wine32 wine64 libwine libwine:i386 fonts-wine
 
+# 钉钉 bundles a PulseAudio client that links against libpulse-mainloop-glib
+# explicitly; libpulse0 alone does not pull that split library in, so DingTalk
+# died at load time with "libpulse-mainloop-glib.so.0: cannot open shared
+# object file".  Ship both architectures: the amd64 build for DingTalk itself,
+# the i386 build for the Wine-hosted callers of the same soname.
+apt-get install -y --no-install-recommends \
+    libpulse-mainloop-glib0 libpulse-mainloop-glib0:i386
+
 # Wine 32-bit library dependencies (i386 architecture)
 # Note: libldap in Bookworm is libldap-2.5-0, not libldap-2.4-2
 apt-get install -y --no-install-recommends \
@@ -194,17 +202,20 @@ for deb in "$EDU_DIR"/*.deb; do
     # and force HOME for the apt-get install subprocess.
     echo 'HOME="/root"' >> /etc/environment
     mkdir -p /home/root/.config
+    # The 希沃白板 mime helper hard-codes /home/$USER/.config and computes the
+    # user as ${HOME#/home/}; with HOME=/root that resolves to /home//.config
+    # and the script logs "write_.config_mimeapp_config failed".  The parent is
+    # root-owned, so create it here instead of letting every vendor postinst
+    # print the same failure.
+    mkdir -p /home/.config
     HOME=/root apt-get install -y --no-install-recommends "$deb"
     installed=$((installed + 1))
 done
 
-# Vendor packages switch themselves on at boot.  None of these belong in the
-# boot path of a generic Live image, and each is an unknown variable for the
-# QEMU smoke test, so mask them through /etc/systemd/system: the dpkg-owned
-# unit files stay untouched while every activation path is refused.  希沃管家
-# keeps its /usr/share/applications menu entry, so it still starts on demand
-# from All Apps (its hugo_launcher backend and SeewoServiceAssistant autostart
-# window are the two things being suppressed here).
+# Vendor packages switch themselves on at boot.  Most of these do not belong in
+# the boot path of a generic Live image, and each is an unknown variable for
+# the QEMU smoke test, so mask them through /etc/systemd/system: the dpkg-owned
+# unit files stay untouched while every activation path is refused.
 mask_unit() {
     # Drop every activation link first: enable puts them at
     # /etc/systemd/system/<target>.wants/<unit>, a direct child, so a
@@ -212,7 +223,21 @@ mask_unit() {
     find /etc/systemd/system -mindepth 2 -type l -name "$1" -delete 2>/dev/null || true
     ln -sfn /dev/null "/etc/systemd/system/$1"
 }
-mask_unit com.seewo.terminalmanager.service
+# 希沃管家 is two programs and only one of them is an autostart decision:
+#   * com.seewo.terminalmanager.service runs
+#     /opt/apps/com.seewo.terminalmanager/files/hugo_launcher/hugo_launcher
+#     --runmode=daemon, the backend the SeewoServiceAssistant window talks to.
+#     Masking it (the old behaviour) left the window opening from All Apps
+#     while nothing was listening, which is exactly the reported
+#     "Cannot read property 'data' of undefined".  The vendor postinst enables
+#     and starts this unit itself, so keep it enabled in the image too: the
+#     Live session has no installer step that could enable it later.
+#   * /etc/xdg/autostart/com.seewo.terminalmanager.desktop merely re-opens that
+#     window at login, and is still removed below until 教育版设置 →
+#     希沃管家开机自启 restores it.
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sfn /usr/lib/systemd/system/com.seewo.terminalmanager.service \
+    /etc/systemd/system/multi-user.target.wants/com.seewo.terminalmanager.service
 mask_unit com.cvte.maxhub.alfred.service
 mask_unit disable-seewo-network-card.service
 
@@ -261,12 +286,48 @@ for desktop in /opt/apps/*/entries/applications/*.desktop; do
     fi
 done
 
+# Taskbar icons for the same vendor apps: ElevenDE matches a window against
+# StartupWMClass= (case-insensitively) or the desktop file's own id, and only
+# then falls back to a transient _NET_WM_ICON.  Electron-based vendor GUIs such
+# as SeewoServiceAssistant publish their *binary* name as WM_CLASS, never the
+# reverse-DNS desktop id, and ship no StartupWMClass= at all, so their task
+# buttons had no stable icon source and showed up blank or generic.  Derive
+# the value from the entry's own Exec line; entries that already declare one
+# are left untouched.
+add_wmclass_from_exec() {
+    entry="$1"
+    grep -q '^StartupWMClass=' "$entry" && return 0
+    exec_line="$(sed -n 's/^Exec=//p' "$entry" | head -n1)"
+    [ -n "$exec_line" ] || return 0
+    wm_class=""
+    for token in $exec_line; do
+        token="$(printf '%s' "$token" | tr -d '"')"
+        case "$token" in
+            /*) candidate="$(basename "$token")" ;;
+            -*) continue ;;
+            *) candidate="$token" ;;
+        esac
+        case "$candidate" in
+            sh | bash | dash | env | sudo | nohup | script | env.*) continue ;;
+        esac
+        wm_class="$candidate"
+        break
+    done
+    [ -n "$wm_class" ] || return 0
+    printf 'StartupWMClass=%s\n' "$wm_class" >>"$entry"
+}
+for desktop in /opt/apps/*/entries/applications/*.desktop; do
+    [ -s "$desktop" ] || continue
+    target="/usr/share/applications/$(basename "$desktop")"
+    [ -s "$target" ] || continue
+    add_wmclass_from_exec "$target"
+done
+
 if [ ! -s /usr/share/applications/com.seewo.terminalmanager.desktop ]; then
     echo "Seewo Terminal Manager menu entry is missing or empty" >&2
     exit 1
 fi
-for masked in com.seewo.terminalmanager.service \
-              com.cvte.maxhub.alfred.service \
+for masked in com.cvte.maxhub.alfred.service \
               disable-seewo-network-card.service \
               com.ifpdos.udi.hotspot.service; do
     [ -L "/etc/systemd/system/$masked" ] || {
@@ -278,6 +339,17 @@ for masked in com.seewo.terminalmanager.service \
         exit 1
     }
 done
+# ...but 希沃管家's own backend must stay reachable: SeewoServiceAssistant
+# reads its configuration from hugo_launcher, so an unstarted daemon is what
+# produced the "Cannot read property 'data' of undefined" window.
+[ ! -L /etc/systemd/system/com.seewo.terminalmanager.service ] || {
+    echo "the Seewo Terminal Manager backend must not be masked" >&2
+    exit 1
+}
+[ -e /etc/systemd/system/multi-user.target.wants/com.seewo.terminalmanager.service ] || {
+    echo "the Seewo Terminal Manager backend is not enabled at boot" >&2
+    exit 1
+}
 # The sidebar runs as a *user* unit, so its switch lives in the global
 # /etc/systemd/user namespace instead of /etc/systemd/system.
 [ -L /etc/systemd/user/com.seewo.easisidebar.service ] || {
@@ -487,8 +559,119 @@ grep -qx "application/pdf=$oo_entry" "$MIMEAPPS" || {
     exit 1
 }
 
+# --- Windows executables (double-click .exe -> Wine) ------------------------
+# ElevenDE routes every file through xdg-open, i.e. through the MIME default in
+# /etc/xdg/mimeapps.list.  Nothing claimed application/x-ms-dos-executable, so
+# double-clicking a Windows program opened the raw bytes in an editor (or did
+# nothing at all), which reads as ".exe 双击无效".
+EXE_PROBE=/tmp/winduxedu-probe.exe
+printf 'MZ' > "$EXE_PROBE"
+EXE_TYPE=""
+if command -v xdg-mime >/dev/null 2>&1; then
+    EXE_TYPE="$(xdg-mime query filetype "$EXE_PROBE" 2>/dev/null || true)"
+fi
+if [ "$EXE_TYPE" != "application/x-ms-dos-executable" ]; then
+    # shared-mime-info normally ships this type; supply it ourselves when the
+    # probe disagrees so the handler below has something to attach to.
+    install -Dm644 /dev/stdin /usr/share/mime/packages/winduxedu-windows-program.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-ms-dos-executable">
+    <comment>Windows executable program</comment>
+    <comment xml:lang="zh_CN">Windows 可执行程序</comment>
+    <glob pattern="*.exe"/>
+  </mime-type>
+</mime-info>
+XML
+    if command -v update-mime-database >/dev/null 2>&1; then
+        update-mime-database /usr/share/mime >/dev/null 2>&1 || true
+    fi
+fi
+rm -f "$EXE_PROBE"
+
+WINE_ENTRY=""
+for cand in /usr/share/applications/wine.desktop \
+    /usr/share/applications/wine-wine.desktop \
+    /usr/share/applications/wine64.desktop; do
+    [ -s "$cand" ] || continue
+    WINE_ENTRY="$(basename "$cand")"
+    if ! grep -q '^MimeType=' "$cand"; then
+        printf 'MimeType=application/x-ms-dos-executable;application/x-msi;\n' >> "$cand"
+    elif ! grep -q '^MimeType=.*application/x-ms-dos-executable' "$cand"; then
+        sed -i '0,/^MimeType=/s|^MimeType=|MimeType=application/x-ms-dos-executable;|' "$cand"
+    fi
+    break
+done
+if [ -z "$WINE_ENTRY" ]; then
+    install -Dm644 /dev/stdin /usr/local/share/applications/winduxedu-wine.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Wine
+Name[zh_CN]=Wine（Windows 程序）
+GenericName=Windows Program Runner
+Comment=Run a Windows executable with Wine
+Comment[zh_CN]=用 Wine 运行 Windows 程序
+Exec=wine %f
+Icon=wine
+Terminal=false
+Categories=Utility;
+MimeType=application/x-ms-dos-executable;application/x-msi;
+EOF
+    WINE_ENTRY=winduxedu-wine.desktop
+fi
+
+winduxedu_mime_default() {
+    # $1 = MIME type, $2 = desktop entry that must open it
+    w_mime="$1"
+    w_entry="$2"
+    MIMEAPPS=/etc/xdg/mimeapps.list
+    if [ -f "$MIMEAPPS" ]; then
+        grep -v "^$w_mime=" "$MIMEAPPS" > "$MIMEAPPS.tmp" || true
+        if grep -q '^\[Default Applications\]' "$MIMEAPPS.tmp"; then
+            sed -i "/^\[Default Applications\]/a $w_mime=$w_entry" "$MIMEAPPS.tmp"
+        else
+            printf '\n[Default Applications]\n%s=%s\n' "$w_mime" "$w_entry" \
+                >> "$MIMEAPPS.tmp"
+        fi
+        mv -f "$MIMEAPPS.tmp" "$MIMEAPPS"
+    else
+        printf '[Default Applications]\n%s=%s\n' "$w_mime" "$w_entry" > "$MIMEAPPS"
+    fi
+}
+winduxedu_mime_default application/x-ms-dos-executable "$WINE_ENTRY"
+winduxedu_mime_default application/x-msi "$WINE_ENTRY"
+grep -qx "application/x-ms-dos-executable=$WINE_ENTRY" /etc/xdg/mimeapps.list || {
+    echo "application/x-ms-dos-executable has no default handler" >&2
+    exit 1
+}
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+    update-desktop-database /usr/local/share/applications >/dev/null 2>&1 || true
+fi
+
 # The staged DEBs are build-time inputs only; drop them before the squashfs.
 rm -rf "$EDU_DIR"
+
+# --- DKMS ---------------------------------------------------------------
+# The Seewo postinst registers hugo_firewall and immediately asks for a build.
+# Inside the build chroot `uname -r` is the *runner's* Azure kernel, so that
+# attempt can only ever fail with
+#   Error! Your kernel headers for kernel 6.17.0-1022-azure cannot be found
+# and it leaves a half-registered module behind.  On the installed system
+# dkms.service then retries the same build at every boot, which is how a
+# non-fatal module became boot-time noise.  Settle it here against the kernel
+# the image actually ships: build once and the module is ready before the
+# first boot, or de-register it so boot has nothing left to attempt.
+if command -v dkms >/dev/null 2>&1; then
+    mkdir -p /var/log/winduxedu
+    dkms autoinstall >/var/log/winduxedu/dkms.log 2>&1 || true
+    if dkms status 2>/dev/null | grep -q 'hugo_firewall.*installed'; then
+        echo "hugo_firewall was built for the kernel shipped in this image"
+    else
+        dkms remove -m hugo_firewall --all >>/var/log/winduxedu/dkms.log 2>&1 || true
+        echo "hugo_firewall cannot be built here; deregistered so boot stays clean"
+    fi
+fi
 
 # includes.chroot preserves whatever mode the checkout carries, and a checkout
 # from a non-POSIX filesystem can hand the smoke probe over without its bit.

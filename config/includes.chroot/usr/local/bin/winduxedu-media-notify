@@ -1,0 +1,80 @@
+#!/bin/sh
+# WinduxEdu: 插入 U 盘自动用资源管理器打开 (removable-media autorun).
+#
+# ElevenDE routes files and directories through xdg-open / explorer.exe, so
+# this helper only has to make the mount appear and then hand the directory to
+# the file manager once.  udisks2 and ntfs-3g are already in the image; the
+# active session user is allowed to mount removable media without a password,
+# so no polkit agent prompt is involved.  Everything is best-effort: if a
+# device cannot be mounted or the manager cannot be started nothing is
+# reported and the next poll simply tries again.
+#
+# Started by elevende-session (helper list) and stopped by session_cleanup.
+
+POLL="${WINDUXEDU_MEDIA_POLL:-2}"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >>/tmp/winduxedu-media-notify.log 2>/dev/null ||
+        true
+}
+
+open_dir() {
+    dir="$1"
+    [ -n "$dir" ] && [ -d "$dir" ] || return 0
+    # Announce every mount point at most once per boot: the same stick is
+    # polled every few seconds and would otherwise spawn a window per tick.
+    grep -Fxq "$dir" /tmp/winduxedu-media-notify.seen 2>/dev/null && return 0
+    echo "$dir" >>/tmp/winduxedu-media-notify.seen 2>/dev/null || true
+    if [ -x /usr/local/bin/explorer.exe ]; then
+        (DISPLAY="${DISPLAY:-:0}" /usr/local/bin/explorer.exe "$dir" \
+            >/dev/null 2>&1 &)
+    elif command -v xdg-open >/dev/null 2>&1; then
+        (DISPLAY="${DISPLAY:-:0}" xdg-open "$dir" >/dev/null 2>&1 &)
+    else
+        return 0
+    fi
+    log "opened $dir"
+}
+
+mount_usb() {
+    command -v lsblk >/dev/null 2>&1 || return 0
+    command -v udisksctl >/dev/null 2>&1 || return 0
+    # Only USB-transported disks: the system disk, the Live medium and loop
+    # devices must never be touched.
+    # -l (list) matters: without it lsblk prefixes children with tree
+    # drawing characters, so $1 would be "└─/dev/sdb1" and never match.
+    for disk in $(lsblk -lnpo NAME,TYPE,TRAN 2>/dev/null |
+        awk '$2 == "disk" && $3 == "usb" { print $1 }'); do
+        for part in $(lsblk -lnpo NAME,TYPE "$disk" 2>/dev/null |
+            awk -v d="$disk" '$1 != d && $2 == "part" { print $1 }'); do
+            [ -b "$part" ] || continue
+            # Already mounted (gvfs or a previous pass) -> handled below.
+            [ -n "$(lsblk -lndo MOUNTPOINT "$part" 2>/dev/null | head -n1)" ] &&
+                continue
+            # Skip partition table entries and unformatted media.
+            [ -n "$(lsblk -lndo FSTYPE "$part" 2>/dev/null | head -n1)" ] ||
+                continue
+            out="$(udisksctl mount -b "$part" 2>/dev/null)" || continue
+            mp="$(printf '%s\n' "$out" | sed -n 's/^Mounted .* at \(.*\)\.$/\1/p')"
+            log "mounted $part -> ${mp:-unknown}"
+            [ -n "$mp" ] && open_dir "$mp"
+        done
+    done
+}
+
+open_new_mounts() {
+    # udisks2 and gvfs both land under /media or /run/media, which keeps
+    # /mnt (Live persistence, user bind mounts) out of the autorun path.
+    awk '$2 ~ "^/media/" || $2 ~ "^/run/media/" { print $2 }' /proc/mounts \
+        2>/dev/null |
+        while IFS= read -r mp; do
+            open_dir "$mp"
+        done
+}
+
+log "start (poll ${POLL}s)"
+while :; do
+    mount_usb
+    open_new_mounts
+    sleep "$POLL"
+done

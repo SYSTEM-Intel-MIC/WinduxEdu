@@ -82,6 +82,17 @@ require_path() {
     }
 }
 
+# includes.chroot preserves whatever mode the checkout carries, and a checkout
+# from a non-POSIX filesystem can hand a helper over without its bit, which
+# silently drops it from the session helper loop ([ -x ] || continue).
+require_exec() {
+    local path="$1"
+    [ -x "$FULL_ROOT/$path" ] || {
+        echo "not executable in final squashfs: /$path" >&2
+        exit 1
+    }
+}
+
 cat_image_file() {
     local path="$1" output="$2"
     unsquashfs -cat "$FS" "$path" > "$output"
@@ -139,7 +150,14 @@ grep -q 'Live session bypasses the login gate' "$SESSION_SCRIPT"
 # while the lock screen is asking for a password, and must be tracked by pid
 # file so the session can stop them again.
 grep -q 'start_winduxedu_helpers' "$SESSION_SCRIPT"
-grep -q 'winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar' "$SESSION_SCRIPT"
+grep -q 'winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar winduxedu-media-notify' "$SESSION_SCRIPT"
+# The stop loop matches the helper's own path in /proc/<pid>/cmdline; $h
+# already carries the winduxedu- prefix, so a doubled prefix would make every
+# kill silently no-op and leave helpers running past logout.
+! grep -q 'winduxedu-winduxedu' "$SESSION_SCRIPT"
+# Calamares' 免密码登录 choice is only an `autologin` group membership, so the
+# session has to honour the marker file winduxedu-target-postinstall writes.
+grep -q '/etc/winduxedu/autologin' "$SESSION_SCRIPT"
 DISPLAY_LAUNCHER="$WORK/winduxedu-elevende-display"
 cat_image_file 'usr/local/sbin/winduxedu-elevende-display' "$DISPLAY_LAUNCHER"
 grep -q 'if \[ -f "\$LOGOUT_MARKER" \]' "$DISPLAY_LAUNCHER"
@@ -231,6 +249,7 @@ for path in \
     usr/local/bin/winduxedu-touch-calibrate \
     usr/local/bin/winduxedu-oskd \
     usr/local/bin/winduxedu-seewo-toolbar \
+    usr/local/bin/winduxedu-media-notify \
     usr/local/libexec/winduxedu-edu-apply \
     usr/local/libexec/winduxedu-edu-uninstall \
     usr/local/share/applications/winduxedu-touch-calibrate.desktop \
@@ -238,6 +257,25 @@ for path in \
     etc/winduxedu/edu-settings.conf \
     usr/share/applications/com.seewo.easisidebar.desktop; do
     require_path "$path"
+done
+
+# The session helper loop skips anything without its executable bit, so an
+# entry that exists but lost the bit is as good as missing: every helper the
+# session starts (and every entry the user clicks) must be executable.
+for exec_path in \
+    usr/local/bin/elevende-session \
+    usr/local/bin/winduxedu-touch-fix \
+    usr/local/bin/winduxedu-touch-calibrate \
+    usr/local/bin/winduxedu-oskd \
+    usr/local/bin/winduxedu-seewo-toolbar \
+    usr/local/bin/winduxedu-media-notify \
+    usr/local/bin/winduxedu-edu-settings \
+    usr/local/libexec/winduxedu-edu-apply \
+    usr/local/libexec/winduxedu-edu-uninstall \
+    usr/local/sbin/winduxedu-elevende-display \
+    usr/local/sbin/winduxedu-live-session-init \
+    usr/local/sbin/winduxedu-smoke-diagnostics; do
+    require_exec "$exec_path"
 done
 
 # SAS footer power actions must share Start's fixed-function bridge rather
@@ -344,13 +382,12 @@ require_path 'usr/share/applications/com.seewo.terminalmanager.desktop'
     echo 'exported Seewo Terminal Manager menu entry is empty' >&2
     exit 1
 }
-# Vendor boot-time activations stay off in a generic Live image: the terminal
-# manager daemon, the MAXHUB alfred D-Bus service and the Seewo NIC script are
-# masked through /etc/systemd/system (unit files themselves remain dpkg-owned),
-# and the terminal manager's session autostart entry is removed.  All three
+# Vendor boot-time activations stay off in a generic Live image: the MAXHUB
+# alfred D-Bus service, the Seewo NIC script and the hotspot unit are masked
+# through /etc/systemd/system (unit files themselves remain dpkg-owned), and
+# the terminal manager's *session* autostart entry is removed.  All three
 # still launch on demand from the menu where the vendor intends them to.
 for masked_unit in \
-    com.seewo.terminalmanager.service \
     com.cvte.maxhub.alfred.service \
     disable-seewo-network-card.service \
     com.ifpdos.udi.hotspot.service; do
@@ -360,6 +397,20 @@ for masked_unit in \
         exit 1
     }
 done
+# 希沃管家 is the deliberate exception and must never be masked again: the
+# SeewoServiceAssistant window reads its data from hugo_launcher, so a masked
+# backend is what produced "Cannot read property 'data' of undefined".  The
+# Live image has no installer step that could enable it later, hence the
+# activation link has to be present in the shipped filesystem.
+require_path 'usr/lib/systemd/system/com.seewo.terminalmanager.service'
+[ -L "$FULL_ROOT/etc/systemd/system/com.seewo.terminalmanager.service" ] && {
+    echo 'Seewo Terminal Manager backend is masked in the final image' >&2
+    exit 1
+}
+[ -L "$FULL_ROOT/etc/systemd/system/multi-user.target.wants/com.seewo.terminalmanager.service" ] || {
+    echo 'Seewo Terminal Manager backend is not enabled at boot in the final image' >&2
+    exit 1
+}
 if [ -e "$FULL_ROOT/etc/xdg/autostart/com.seewo.terminalmanager.desktop" ]; then
     echo 'Seewo Terminal Manager autostart entry survived into the final image' >&2
     exit 1
@@ -458,6 +509,35 @@ require_path "usr/share/applications/$oo_entry"
 OO_DESKTOP_FILE="$WORK/onlyoffice.desktop"
 cat_image_file "usr/share/applications/$oo_entry" "$OO_DESKTOP_FILE"
 grep -q '^MimeType=.*application/pdf' "$OO_DESKTOP_FILE"
+
+# Double-clicking a Windows program must reach Wine: ElevenDE hands every file
+# to xdg-open, i.e. to the default recorded here, so an absent or dangling
+# entry is what made .exe inert.
+exe_entry="$(grep -m1 '^application/x-ms-dos-executable=' "$MIMEAPPS_LIST" |
+    cut -d= -f2 || true)"
+[ -n "$exe_entry" ] || {
+    echo 'application/x-ms-dos-executable has no default handler in the final image' >&2
+    exit 1
+}
+EXE_DESKTOP_FILE=""
+for exe_candidate in "$FULL_ROOT/usr/share/applications/$exe_entry" \
+    "$FULL_ROOT/usr/local/share/applications/$exe_entry"; do
+    [ -f "$exe_candidate" ] || continue
+    EXE_DESKTOP_FILE="$exe_candidate"
+    break
+done
+[ -n "$EXE_DESKTOP_FILE" ] || {
+    echo "default .exe handler desktop entry is missing: $exe_entry" >&2
+    exit 1
+}
+grep -qi '^Exec=.*wine' "$EXE_DESKTOP_FILE" || {
+    echo "default .exe handler does not run Wine: $exe_entry" >&2
+    exit 1
+}
+grep -q '^MimeType=.*application/x-ms-dos-executable' "$EXE_DESKTOP_FILE" || {
+    echo "handler does not advertise application/x-ms-dos-executable: $exe_entry" >&2
+    exit 1
+}
 
 # All Apps must not surface session/power helpers as regular applications.  This
 # validates the fully installed filesystem rather than trusting the source hook.

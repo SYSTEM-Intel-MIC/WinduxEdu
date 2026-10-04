@@ -169,6 +169,22 @@ rm -f /usr/share/applications/winduxedu-sticky-keys.desktop \
 # menu shortcut (xterm above gets the same treatment via NoDisplay).
 rm -f /usr/share/applications/guvcview.desktop \
       /usr/share/applications/guvcview-viewer.desktop
+# One terminal entry, one calibrator entry.  Both packages ship their own
+# /usr/share/applications record whose Exec differs from the curated local
+# copy above, so the shell's Exec-based de-duplication keeps both and Start
+# shows "终端" twice (styled vs. stock) and both "Touch Calibration" and
+# "Calibrate Touchscreen" for the same touchscreen tool.
+rm -f /usr/share/applications/xterm.desktop \
+      /usr/share/applications/xinput_calibrator.desktop
+# OpenSSH ships enabled by default but nothing on WinduxEdu uses it: the QEMU
+# smoke boot and the diagnostics probe are serial-console based.  Without host
+# keys or a privilege-separation directory the unit starts at every boot and
+# immediately lands in the journal as a failed unit, so keep the binaries
+# installed (a manual `systemctl start ssh` still works) but not enabled.
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable ssh.service >/dev/null 2>&1 || true
+    systemctl disable ssh.socket >/dev/null 2>&1 || true
+fi
 
 # Never expose standalone session/power commands as ordinary applications.  The
 # Start and SAS power controls remain the only supported routes, so command

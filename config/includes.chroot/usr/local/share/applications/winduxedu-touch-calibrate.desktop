@@ -1,9 +1,16 @@
 [Desktop Entry]
 Type=Application
-Name=Touch Calibration
+# One calibrator, two names: the stock xinput-calibrator record this entry
+# replaces was called "Calibrate Touchscreen", so that is the canonical Name
+# and 触屏校准 stays its zh_CN alias instead of a second All Apps icon.
+Name=Calibrate Touchscreen
 Name[zh_CN]=触屏校准
+GenericName=Touchscreen calibration
+GenericName[zh_CN]=触摸屏校准
 Comment=Recalibrate the touchscreen mapping
 Comment[zh_CN]=重新校准触摸屏坐标映射
+Keywords=Calibrate Touchscreen;Touch Calibration;Touchscreen Calibrator;xinput-calibrator;calibrate;校准;
+Keywords[zh_CN]=触屏校准;校准;触摸屏;
 Exec=/usr/local/bin/winduxedu-touch-calibrate
 Icon=input-touchscreen
 Terminal=false
