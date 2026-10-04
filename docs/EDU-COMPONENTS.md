@@ -6,7 +6,7 @@
 
 收录区组件**不属于开源软件，与 SYSTEM-Intel-MIC 无关，仅按原样收录且版本不更换**。
 
-> 屏幕键盘等 Debian 源内的开源组件**不是教学软件**：`matchbox-keyboard` 属于触屏输入/无障碍组件，随硬件兼容层安装，声明见 [`HARDWARE-COMPATIBILITY.md`](HARDWARE-COMPATIBILITY.md) §4。
+> 屏幕键盘等 Debian 源内的开源组件**不是教学软件**：`onboard` 属于触屏输入/无障碍组件，随硬件兼容层安装，声明见 [`HARDWARE-COMPATIBILITY.md`](HARDWARE-COMPATIBILITY.md) §4。
 
 ## 一、专有软件收录区（edu-software/）
 

@@ -103,16 +103,6 @@ bool eduRead(const QString &key, bool fallback)
     return out == QStringLiteral("1") || out == QStringLiteral("true");
 }
 
-// The system-level switches escalate through winduxedu-privileged-action and
-// the WinduxEdu polkit rule, which already returns YES for the live and
-// installed users.  Detached so the settings window never waits on it.
-void eduWrite(const QString &key, bool on)
-{
-    QProcess::startDetached(eduToolPath(),
-                            { QStringLiteral("set"), key,
-                              on ? QStringLiteral("1") : QStringLiteral("0") });
-}
-
 struct EduToggle {
     QString key;
     QCheckBox *box;
@@ -123,6 +113,92 @@ struct EduState {
     QList<EduToggle> toggles;
     QString listing;
 };
+
+// Both system-level switches and 卸载 escalate through pkexec, and a refusal
+// there used to be invisible: QProcess::startDetached() throws the exit status
+// and stderr away, so the page's 2 s re-read simply un-checked the switch
+// ("勾选后自动取消") and the 卸载 button did nothing at all.  Show pkexec's own
+// message instead; winduxedu-edu-settings also keeps it in
+// ~/.cache/winduxedu/edu-escalation.log for a report from a machine we cannot
+// reach.
+void eduReportFailure(QWidget *host, const QString &what, int code,
+                      const QString &detail)
+{
+    QString reason = detail.trimmed();
+    if (reason.isEmpty())
+        reason = QStringLiteral(
+            "pkexec 没有给出原因，可查看 ~/.cache/winduxedu/edu-escalation.log");
+    QMessageBox::warning(
+        host, QStringLiteral("教育版设置"),
+        QStringLiteral("%1 失败（退出码 %2）：\n%3")
+            .arg(what)
+            .arg(code)
+            .arg(reason));
+}
+
+// A long-running privileged job (apt-get remove) must not block the GUI.
+// Parenting the QProcess to the page keeps it alive for the whole run and lets
+// us report its exit status instead of firing and forgetting it.
+void eduRunAsync(const QStringList &args, const QString &what, QWidget *host)
+{
+    auto *proc = new QProcess(host);
+    QObject::connect(proc, &QProcess::finished, host,
+                     [proc, host, what](int code, QProcess::ExitStatus) {
+                         const QString err =
+                             QString::fromUtf8(proc->readAllStandardError());
+                         proc->deleteLater();
+                         if (code == 0)
+                             return;
+                         eduReportFailure(host, what, code, err);
+                     });
+    QObject::connect(proc, &QProcess::errorOccurred, host,
+                     [proc, host, what](QProcess::ProcessError err) {
+                         if (err != QProcess::FailedToStart)
+                             return;
+                         const QString detail = proc->errorString();
+                         proc->deleteLater();
+                         eduReportFailure(host, what, -1, detail);
+                     });
+    proc->start(eduToolPath(), args);
+}
+
+// The switch has to be applied *before* the page's 2 s re-read runs: the first
+// pkexec has to D-Bus-activate polkitd and load its JS rule engine, which on a
+// classroom all-in-one easily takes longer than that, and the refresh then
+// un-checked the box while the write was still in flight.  Run it to
+// completion -- bounded, so a wedged pkexec cannot freeze the window forever --
+// and reconcile the checkbox with the system before returning.
+bool eduWrite(const QString &key, bool on, bool fallback, QCheckBox *box,
+              QWidget *host)
+{
+    QProcess p;
+    p.start(eduToolPath(),
+            { QStringLiteral("set"), key,
+              on ? QStringLiteral("1") : QStringLiteral("0") });
+    if (!p.waitForStarted(5000)) {
+        eduReportFailure(host, key, -1, p.errorString());
+        return false;
+    }
+    if (!p.waitForFinished(20000)) {
+        p.kill();
+        p.waitForFinished(2000);
+        eduReportFailure(host, key, -1,
+                         QStringLiteral("pkexec 20 秒内没有结束"));
+        return false;
+    }
+    if (p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0) {
+        eduReportFailure(host, key, p.exitCode(),
+                         QString::fromUtf8(p.readAllStandardError()));
+        return false;
+    }
+    const bool real = eduRead(key, fallback);
+    if (box->isChecked() != real) {
+        box->blockSignals(true);
+        box->setChecked(real);
+        box->blockSignals(false);
+    }
+    return true;
+}
 
 QWidget *eduToggleRow(const QString &title, const QString &detail,
                       const QString &key, bool fallback, EduState *state)
@@ -156,15 +232,16 @@ QWidget *eduToggleRow(const QString &title, const QString &detail,
     h->addWidget(text, 1);
     h->addWidget(box, 0, Qt::AlignVCenter);
 
-    QObject::connect(box, &QCheckBox::toggled, [key](bool on) {
-        eduWrite(key, on);
-    });
+    QObject::connect(box, &QCheckBox::toggled,
+                     [key, fallback, box, row](bool on) {
+                         eduWrite(key, on, fallback, box, row);
+                     });
     return row;
 }
 
-// One row per installed Seewo package: name, package id and a confirm-then-
-// detached uninstall button.  Returns the listing so the refresh timer can
-// detect that the set of packages changed.
+// One row per installed Seewo package: name, package id and a confirm-then-run
+// uninstall button whose exit status is reported.  Returns the listing so the
+// refresh timer can detect that the set of packages changed.
 QString eduFillUninstall(QWidget *container, QVBoxLayout *lay)
 {
     QLayoutItem *old = nullptr;
@@ -224,7 +301,8 @@ QString eduFillUninstall(QWidget *container, QVBoxLayout *lay)
         rh->addWidget(names, 1);
         rh->addWidget(btn, 0, Qt::AlignVCenter);
 
-        QObject::connect(btn, &QPushButton::clicked, row, [pkg, label]() {
+        QObject::connect(btn, &QPushButton::clicked, row,
+                         [pkg, label, row]() {
             const auto answer = QMessageBox::question(
                 nullptr,
                 QStringLiteral("卸载 %1").arg(label),
@@ -233,8 +311,8 @@ QString eduFillUninstall(QWidget *container, QVBoxLayout *lay)
                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
             if (answer != QMessageBox::Yes)
                 return;
-            QProcess::startDetached(eduToolPath(),
-                                    { QStringLiteral("uninstall-seewo"), pkg });
+            eduRunAsync({ QStringLiteral("uninstall-seewo"), pkg },
+                        QStringLiteral("卸载 %1").arg(label), row);
         });
         lay->addWidget(row);
     }
@@ -257,7 +335,8 @@ QWidget *buildEduPage()
     auto *intro = new QLabel(QStringLiteral(
         "WinduxEdu 面向教学场景的开关。默认全部关闭：只有在希沃一体机上才需要"
         "打开希沃管家，侧边栏与其 UDI 依赖则是第三方互联网软件。"
-        "标注为系统级的开关会请求管理员授权；页面每两秒重新读取一次真实状态。"),
+        "标注为系统级的开关会同步完成一次管理员授权，失败时直接给出原因，"
+        "不会静默回退；页面每两秒重新读取一次真实状态。"),
         outer);
     intro->setWordWrap(true);
     intro->setProperty("subtle", true);
@@ -266,9 +345,9 @@ QWidget *buildEduPage()
     v->addWidget(xCard(QStringLiteral("屏幕键盘"),
                        eduToggleRow(QStringLiteral("输入时弹出屏幕键盘"),
                                     QStringLiteral("输入文字时自动弹出，登录界面同样生效；"
-                                                   "实现为 matchbox-keyboard（GPL-2-or-later，"
+                                                   "实现为 onboard（GPL-3.0，"
                                                    "许可见 /usr/share/doc/"
-                                                   "matchbox-keyboard/copyright）。"),
+                                                   "onboard/copyright）。"),
                                     QStringLiteral("screen-keyboard"),
                                     false,
                                     state)));
@@ -288,7 +367,7 @@ QWidget *buildEduPage()
                                     QStringLiteral("侧边栏与其依赖的 UDI 热点服务均为"
                                                    "第三方互联网软件、非开源，与 WinduxEdu / "
                                                    "SYSTEM-Intel-MIC 无关；默认关闭，"
-                                                   "打开时一并启用依赖服务。"),
+                                                   "打开时一并启用依赖服务。UDI 服务立即启用，侧边栏本体在下次登录时自动启动。"),
                                     QStringLiteral("sidebar-autostart"),
                                     false,
                                     state)));

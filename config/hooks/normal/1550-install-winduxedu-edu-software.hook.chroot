@@ -267,7 +267,20 @@ dpkg-query -W -f='${Status}' fonts-noto-cjk 2>/dev/null |
     exit 1
 }
 
-rm -f /etc/xdg/autostart/com.seewo.terminalmanager.desktop
+# Save the vendor autostart entry before dropping it.  教育版设置 → 希沃管家
+# restores through winduxedu-edu-apply, whose fallback chain starts at
+# /usr/share/winduxedu/vendor-autostart; the plain `rm -f` below used to leave
+# that copy permanently missing, so switching 希沃管家开机自启 back on could
+# only ever report "no entry to restore" (the restore is marked required).
+mkdir -p /usr/share/winduxedu/vendor-autostart
+for vendor_autostart_entry in \
+    /etc/xdg/autostart/com.seewo.terminalmanager.desktop \
+    /etc/xdg/autostart/*[sS]idebar*.desktop; do
+    [ -s "$vendor_autostart_entry" ] || continue
+    install -m 0644 "$vendor_autostart_entry" \
+        "/usr/share/winduxedu/vendor-autostart/$(basename "$vendor_autostart_entry")"
+    rm -f "$vendor_autostart_entry"
+done
 if [ -d /home ]; then
     find /home -name 'com.seewo.terminalmanager.desktop' -delete 2>/dev/null || true
 fi
@@ -285,6 +298,19 @@ for desktop in /opt/apps/*/entries/applications/*.desktop; do
         install -m 0644 "$desktop" "$target"
     fi
 done
+
+# 教育版设置 restores the 希沃管家 autostart entry from
+# /usr/share/winduxedu/vendor-autostart first.  The vendor deb ships a
+# zero-byte placeholder under /usr/share/applications (see above) and may not
+# install an /etc/xdg/autostart record at all, so seed that copy from the menu
+# entry the loop above has just materialised: the restore path is marked
+# required, and without a seed switching 希沃管家开机自启 back on could only
+# ever report "no entry to restore".
+if [ ! -s /usr/share/winduxedu/vendor-autostart/com.seewo.terminalmanager.desktop ] &&
+    [ -s /usr/share/applications/com.seewo.terminalmanager.desktop ]; then
+    install -m 0644 /usr/share/applications/com.seewo.terminalmanager.desktop \
+        /usr/share/winduxedu/vendor-autostart/com.seewo.terminalmanager.desktop
+fi
 
 # Taskbar icons for the same vendor apps: ElevenDE matches a window against
 # StartupWMClass= (case-insensitively) or the desktop file's own id, and only
@@ -377,10 +403,108 @@ if [ ! -x /opt/apps/com.seewo.easiminiapps.desktopinkannotation/files/bin/Deskto
     echo "the annotation binary is missing" >&2
     exit 1
 fi
+
+# 人数统计 and 随机抽选 point their sidebar record at a shell script, and .NET's
+# Process.Start is a bare execve with no ENOEXEC fallback: a script without a
+# shebang makes the kernel fail the spawn, so the click does nothing at all
+# (field report item 11 -- 截屏/计时器/批注 work because they are ELF).  Give
+# every script entry point a record references an interpreter line, keep it
+# executable, and leave ELF targets untouched.
+for miniapp in /etc/EasiSideBar/MiniApps/*; do
+    [ -s "$miniapp" ] || continue
+    miniapp_exec="$(sed -n 's/^ExecutablePath=//p' "$miniapp" | head -n1)"
+    [ -n "$miniapp_exec" ] || continue
+    [ -f "$miniapp_exec" ] || continue
+    case "$(head -c4 "$miniapp_exec" | od -An -tx1 | tr -d ' \n')" in
+        7f454c46*)
+            # ELF binary: execve runs it as-is.
+            continue
+            ;;
+        2321*)
+            ;;
+        *)
+            # Only a text file may receive an interpreter line: prepending one
+            # to a binary would corrupt an entry point execve could have run
+            # as-is.  grep -I reports "binary" (exit 1) as soon as a NUL byte
+            # shows up in the first chunk.
+            if LC_ALL=C grep -Iq '' "$miniapp_exec"; then
+                sed -i '1i #!/bin/sh' "$miniapp_exec"
+                echo "added a shebang to sidebar entry point: $miniapp_exec"
+            else
+                echo "warning: sidebar entry point is binary but not ELF, leaving it untouched: $miniapp_exec" >&2
+                chmod 0755 "$miniapp_exec"
+                continue
+            fi
+            ;;
+    esac
+    chmod 0755 "$miniapp_exec"
+    head -c2 "$miniapp_exec" | grep -q '#!' || {
+        echo "sidebar entry point still has no shebang: $miniapp_exec" >&2
+        exit 1
+    }
+done
 if [ -e /etc/xdg/autostart/com.seewo.terminalmanager.desktop ]; then
     echo "Seewo Terminal Manager autostart entry survived" >&2
     exit 1
 fi
+
+# Requested desktop (field report item 7): 希沃白板, 班级优化大师, 视频展台,
+# 希沃管家, 微信, QQ, 钉钉, ONLYOFFICE -- on top of 此电脑, 主目录, Edge and
+# 终端, which hook 1500 already writes.  The shell reads Name/Icon/Exec from
+# the record itself, so copy the vendor entry into the skeleton (both the live
+# session and every installed user inherit it) and drop the menu-only flags
+# that would hide it there.  A record that cannot be found is reported instead
+# of failing the build, and the diagnostic below makes it visible either way.
+install -d /etc/skel/Desktop
+winduxedu_desktop_shortcut() {
+    ds_name="$1"
+    ds_key="$2"
+    shift 2
+    found=""
+    for ds_id in "$ds_key" "$@"; do
+        [ -z "$found" ] || break
+        for ds_dir in /usr/share/applications /usr/local/share/applications; do
+            [ -f "$ds_dir/$ds_id.desktop" ] || continue
+            found="$ds_dir/$ds_id.desktop"
+            break
+        done
+    done
+    if [ -z "$found" ]; then
+        for ds_id in "$ds_key" "$@"; do
+            [ -z "$found" ] || break
+            found="$(find /usr/share/applications /usr/local/share/applications \
+                -maxdepth 1 -type f -iname "*${ds_id}*.desktop" 2>/dev/null \
+                | sort | head -n1)"
+        done
+    fi
+    if [ -z "$found" ]; then
+        echo "warning: no application entry for desktop shortcut ${ds_name} (key ${ds_key})" >&2
+        return 0
+    fi
+    install -m 0644 "$found" "/etc/skel/Desktop/${ds_name}.desktop"
+    sed -i -e '/^NoDisplay=/d' -e '/^Hidden=/d' \
+        -e '/^OnlyShowIn=/d' -e '/^NotShowIn=/d' \
+        "/etc/skel/Desktop/${ds_name}.desktop"
+    echo "desktop shortcut: ${ds_name} <- ${found}"
+}
+winduxedu_desktop_shortcut 希沃白板 com.seewo.easinote5 easinote
+winduxedu_desktop_shortcut 班级优化大师 com.seewo.easicare easicare
+winduxedu_desktop_shortcut 视频展台 com.seewo.easicamera easicamera
+winduxedu_desktop_shortcut 希沃管家 com.seewo.terminalmanager terminalmanager
+winduxedu_desktop_shortcut 微信 wechat com.tencent.wechat
+winduxedu_desktop_shortcut QQ linuxqq qq com.qq.QQ
+winduxedu_desktop_shortcut 钉钉 com.alibabainc.dingtalk dingtalk
+winduxedu_desktop_shortcut ONLYOFFICE onlyoffice-desktopeditors onlyoffice
+# Report what the shell will actually render so a wrong id is visible in the
+# build log rather than as a missing icon on the teacher's desktop.
+for shortcut in /etc/skel/Desktop/*.desktop; do
+    [ -f "$shortcut" ] || continue
+    if ! grep -q '^Exec=' "$shortcut" || ! grep -q '^Name=' "$shortcut"; then
+        echo "warning: unusable desktop shortcut (no Name/Exec): $shortcut" >&2
+        continue
+    fi
+    echo "desktop shortcut ok: $(basename "$shortcut") -> $(sed -n 's/^Exec=//p' "$shortcut" | head -n1)"
+done
 
 # ---------------------------------------------------------------------------
 # Vendor application adaptations.
@@ -559,6 +683,40 @@ grep -qx "application/pdf=$oo_entry" "$MIMEAPPS" || {
     exit 1
 }
 
+# ONLYOFFICE opens every double-clicked document in a *new* window, which reads
+# as "the file opened twice" (field report item 1).  editorWindowMode = true
+# keeps a single window with tabs.  Honour an existing key wherever the file
+# puts it; when the file is sectioned but has no such key yet, insert it at the
+# top of the first section, otherwise append it.
+set_oo_window_mode() {
+    oo_conf="$1"
+    mkdir -p "$(dirname "$oo_conf")"
+    if [ -f "$oo_conf" ] &&
+        grep -q '^[[:space:]]*editorWindowMode[[:space:]]*=' "$oo_conf"; then
+        sed -i "s|^[[:space:]]*editorWindowMode[[:space:]]*=.*|editorWindowMode = true|" \
+            "$oo_conf"
+    elif [ -f "$oo_conf" ] && grep -q '^\[' "$oo_conf"; then
+        awk 'BEGIN { done = 0 }
+             /^\[/ && !done { print; print "editorWindowMode = true"; done = 1; next }
+             { print }
+             END { if (!done) print "editorWindowMode = true" }' \
+            "$oo_conf" > "$oo_conf.tmp"
+        mv -f "$oo_conf.tmp" "$oo_conf"
+    else
+        printf 'editorWindowMode = true\n' >> "$oo_conf"
+    fi
+}
+set_oo_window_mode /etc/skel/.config/onlyoffice/DesktopEditors.conf
+for oo_user_conf in /home/*/.config/onlyoffice/DesktopEditors.conf; do
+    [ -f "$oo_user_conf" ] || continue
+    set_oo_window_mode "$oo_user_conf"
+done
+grep -qx 'editorWindowMode = true' \
+    /etc/skel/.config/onlyoffice/DesktopEditors.conf || {
+    echo "ONLYOFFICE single-window mode was not written to the skeleton" >&2
+    exit 1
+}
+
 # --- Windows executables (double-click .exe -> Wine) ------------------------
 # ElevenDE routes every file through xdg-open, i.e. through the MIME default in
 # /etc/xdg/mimeapps.list.  Nothing claimed application/x-ms-dos-executable, so
@@ -642,6 +800,32 @@ winduxedu_mime_default application/x-ms-dos-executable "$WINE_ENTRY"
 winduxedu_mime_default application/x-msi "$WINE_ENTRY"
 grep -qx "application/x-ms-dos-executable=$WINE_ENTRY" /etc/xdg/mimeapps.list || {
     echo "application/x-ms-dos-executable has no default handler" >&2
+    exit 1
+}
+
+# Double-clicking an archive went to Wine's explorer.exe, which has no such
+# feature (field report item 4): nothing claimed the archive MIME types, so
+# ElevenDE's xdg-open fell through to the Wine fallback.  PeaZip is the
+# WinduxEdu archive handler; its record is written by hook 1500 and already
+# advertises these types.
+[ -s /usr/local/share/applications/peazip.desktop ] || {
+    echo "the PeaZip desktop entry is missing" >&2
+    exit 1
+}
+for archive_type in \
+    application/zip \
+    application/x-7z-compressed \
+    application/gzip \
+    application/x-gzip \
+    application/x-tar \
+    application/x-bzip2 \
+    application/x-xz \
+    application/x-compressed-tar \
+    application/x-rar-compressed; do
+    winduxedu_mime_default "$archive_type" peazip.desktop
+done
+grep -qx "application/zip=peazip.desktop" /etc/xdg/mimeapps.list || {
+    echo "application/zip has no default handler" >&2
     exit 1
 }
 if command -v update-desktop-database >/dev/null 2>&1; then

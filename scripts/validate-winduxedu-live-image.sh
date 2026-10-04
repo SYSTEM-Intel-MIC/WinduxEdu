@@ -150,7 +150,15 @@ grep -q 'Live session bypasses the login gate' "$SESSION_SCRIPT"
 # while the lock screen is asking for a password, and must be tracked by pid
 # file so the session can stop them again.
 grep -q 'start_winduxedu_helpers' "$SESSION_SCRIPT"
-grep -q 'winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar winduxedu-media-notify' "$SESSION_SCRIPT"
+# Both lists must carry the same helpers: a start/stop mismatch leaves the
+# audio bootstrap and the shortcut repair loop running past logout.
+helper_list_occurrences="$(grep -c \
+    'winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar winduxedu-media-notify winduxedu-audio-session winduxedu-desktop-tidy' \
+    "$SESSION_SCRIPT" || true)"
+if [ "${helper_list_occurrences:-0}" -lt 2 ]; then
+    echo "the session helper list is not registered for both start and stop" >&2
+    exit 1
+fi
 # The stop loop matches the helper's own path in /proc/<pid>/cmdline; $h
 # already carries the winduxedu- prefix, so a doubled prefix would make every
 # kill silently no-op and leave helpers running past logout.
@@ -250,11 +258,18 @@ for path in \
     usr/local/bin/winduxedu-oskd \
     usr/local/bin/winduxedu-seewo-toolbar \
     usr/local/bin/winduxedu-media-notify \
+    usr/local/bin/winduxedu-audio-session \
+    usr/local/bin/winduxedu-desktop-tidy \
+    usr/local/bin/xterm \
     usr/local/libexec/winduxedu-edu-apply \
     usr/local/libexec/winduxedu-edu-uninstall \
     usr/local/share/applications/winduxedu-touch-calibrate.desktop \
+    usr/local/share/applications/peazip.desktop \
     etc/X11/xorg.conf.d/60-winduxedu-touchscreen.conf \
     etc/winduxedu/edu-settings.conf \
+    etc/skel/.config/fcitx5/config \
+    etc/skel/.config/fcitx5/profile \
+    etc/skel/.config/onlyoffice/DesktopEditors.conf \
     usr/share/applications/com.seewo.easisidebar.desktop; do
     require_path "$path"
 done
@@ -269,7 +284,11 @@ for exec_path in \
     usr/local/bin/winduxedu-oskd \
     usr/local/bin/winduxedu-seewo-toolbar \
     usr/local/bin/winduxedu-media-notify \
+    usr/local/bin/winduxedu-audio-session \
+    usr/local/bin/winduxedu-desktop-tidy \
+    usr/local/bin/xterm \
     usr/local/bin/winduxedu-edu-settings \
+    usr/bin/onboard \
     usr/local/libexec/winduxedu-edu-apply \
     usr/local/libexec/winduxedu-edu-uninstall \
     usr/local/sbin/winduxedu-elevende-display \
@@ -284,6 +303,27 @@ if ! strings -el "$FULL_ROOT/usr/local/bin/sas-screen" | grep -q '/usr/local/bin
     echo 'final ISO SAS binary does not route power actions through WinduxEdu bridge' >&2
     exit 1
 fi
+
+# The taskbar auto-hide decision must look at *every* viewable client with a
+# 250 ms settle: judging by _NET_ACTIVE_WINDOW alone is what let the Seewo
+# ink-annotation overlay flip the bar on every focus change inside the
+# annotation UI (field report: 批注开启时任务栏闪烁).  The patch announces
+# itself through the shell's own startup log line.
+require_path 'usr/local/bin/elevende-shell'
+require_exec 'usr/local/bin/elevende-shell'
+if ! strings "$FULL_ROOT/usr/local/bin/elevende-shell" |
+    grep -qF 'fullscreen scan=every-viewable-client settle=250ms'; then
+    echo 'final ISO elevende-shell lacks the WinduxEdu fullscreen taskbar policy' >&2
+    exit 1
+fi
+if ! strings "$FULL_ROOT/usr/local/bin/elevende-shell" | grep -qF 'skip-taskbar filter'; then
+    echo 'final ISO elevende-shell lacks the WinduxEdu skip-taskbar filter' >&2
+    exit 1
+fi
+# 希沃白板 execve's straight into libunistring.so.2; without the shared object
+# it exits before drawing anything and the desktop icon appears dead, so the
+# compatibility layer declares the amd64 library explicitly.
+require_path 'usr/lib/x86_64-linux-gnu/libunistring.so.2'
 
 # All WinduxEdu third-party components resolve to curated Windows 11 aliases in
 # the ElevenDE icon theme.  Checking the final squashfs catches both package
@@ -343,6 +383,261 @@ cat_image_file 'etc/X11/Xresources.d/elevende' "$XTERM_RESOURCES"
 grep -q '^XTerm\*faceName: DejaVu Sans Mono,Noto Sans CJK SC$' "$XTERM_RESOURCES"
 grep -q '^XTerm\*cjkWidth: false$' "$XTERM_RESOURCES"
 grep -q '^XTerm\*background: #000000$' "$XTERM_RESOURCES"
+
+# ---- field report round 2 -------------------------------------------------
+# All checks below validate the expanded filesystem, never the hook source,
+# so a packaging regression cannot hide behind a correct script.
+
+# (6) Duplicate apt sources could not be reproduced -- the evidence had been
+# deleted before it reached us -- so the image prints its whole apt picture on
+# every run and only a *literally* duplicated line fails.  That keeps the next
+# occurrence in CI's log instead of in the classroom.
+echo '--- apt sources shipped in the final image ---'
+if [ -f "$FULL_ROOT/etc/apt/sources.list" ]; then
+    sed 's/^/  /' "$FULL_ROOT/etc/apt/sources.list"
+else
+    echo '  (no /etc/apt/sources.list)'
+fi
+if [ -d "$FULL_ROOT/etc/apt/sources.list.d" ]; then
+    for source_file in "$FULL_ROOT"/etc/apt/sources.list.d/*; do
+        [ -f "$source_file" ] || continue
+        echo "  # ${source_file#$FULL_ROOT/}"
+        sed 's/^/  /' "$source_file"
+    done
+fi
+apt_source_lines() {
+    local source_file
+    if [ -f "$FULL_ROOT/etc/apt/sources.list" ]; then
+        grep -hEv '^[[:space:]]*(#|$)' "$FULL_ROOT/etc/apt/sources.list" || true
+    fi
+    if [ -d "$FULL_ROOT/etc/apt/sources.list.d" ]; then
+        for source_file in "$FULL_ROOT"/etc/apt/sources.list.d/*; do
+            [ -f "$source_file" ] || continue
+            grep -hEv '^[[:space:]]*(#|$)' "$source_file" || true
+        done
+    fi
+    return 0
+}
+duplicated_sources="$(apt_source_lines | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' | sort | uniq -d)"
+if [ -n "$duplicated_sources" ]; then
+    echo 'duplicate apt source line(s) in the final image:' >&2
+    printf '  %s\n' "$duplicated_sources" >&2
+    exit 1
+fi
+
+# (1) ONLYOFFICE must keep one window with tabs instead of one window per
+# double-clicked document.
+grep -qx 'editorWindowMode = true' \
+    "$FULL_ROOT/etc/skel/.config/onlyoffice/DesktopEditors.conf" || {
+    echo 'ONLYOFFICE single-window mode is not set in the skeleton' >&2
+    exit 1
+}
+
+# (3) Typing Chinese must go back to English on a plain Shift press.  fcitx5's
+# compiled default only recognises the left shift key, so both keys are
+# configured explicitly (and Deactivate covers the "session started in
+# English" state where AltTrigger deliberately does nothing).
+FCITX_CONF="$FULL_ROOT/etc/skel/.config/fcitx5/config"
+grep -qx 'AltTriggerKeys=Shift_L Shift_R' "$FCITX_CONF" || {
+    echo 'fcitx5 Shift trigger is not configured for both shift keys' >&2
+    exit 1
+}
+grep -qx 'DeactivateKeys=Shift_L Shift_R' "$FCITX_CONF" || {
+    echo 'fcitx5 Shift deactivate trigger is missing' >&2
+    exit 1
+}
+
+# (4) Double-clicking an archive must reach PeaZip: the record has to launch
+# through the adapter, its entry point has to resolve inside the image, and it
+# has to be the registered default for archives.
+PEAZIP_ENTRY="$FULL_ROOT/usr/local/share/applications/peazip.desktop"
+PEAZIP_EXEC="$(sed -n 's/^Exec=//p' "$PEAZIP_ENTRY" | head -n1)"
+case "$PEAZIP_EXEC" in
+    /usr/local/libexec/winduxedu-component-launch\ *) ;;
+    *)
+        echo "PeaZip entry does not launch through the adapter: $PEAZIP_EXEC" >&2
+        exit 1
+        ;;
+esac
+PEAZIP_CMD="${PEAZIP_EXEC#*winduxedu-component-launch }"
+PEAZIP_CMD="${PEAZIP_CMD%% *}"
+case "$PEAZIP_CMD" in
+    /*) peazip_resolved="$FULL_ROOT$PEAZIP_CMD" ;;
+    *)  peazip_resolved="$FULL_ROOT/usr/bin/$PEAZIP_CMD" ;;
+esac
+if [ ! -x "$peazip_resolved" ] && [ ! -x "$FULL_ROOT/usr/local/bin/$PEAZIP_CMD" ]; then
+    echo "PeaZip entry point does not resolve inside the image: $PEAZIP_CMD" >&2
+    exit 1
+fi
+grep -q '^MimeType=.*application/zip' "$PEAZIP_ENTRY" || {
+    echo 'PeaZip entry does not advertise application/zip' >&2
+    exit 1
+}
+grep -qx 'application/zip=peazip.desktop' "$FULL_ROOT/etc/xdg/mimeapps.list" || {
+    echo 'application/zip has no PeaZip default handler' >&2
+    exit 1
+}
+for vendor_peazip in "$FULL_ROOT"/usr/share/applications/peazip*.desktop; do
+    [ -f "$vendor_peazip" ] || continue
+    echo "vendor PeaZip record still competes with ours: ${vendor_peazip#$FULL_ROOT/}" >&2
+    exit 1
+done
+
+# (7) The requested desktop, on top of 此电脑 / 主目录 / Edge / 终端.
+for shortcut in 希沃白板 班级优化大师 视频展台 希沃管家 微信 QQ 钉钉 ONLYOFFICE; do
+    shortcut_file="$FULL_ROOT/etc/skel/Desktop/$shortcut.desktop"
+    [ -s "$shortcut_file" ] || {
+        echo "missing desktop shortcut in the skeleton: $shortcut" >&2
+        exit 1
+    }
+    grep -q '^Name=' "$shortcut_file" || {
+        echo "desktop shortcut has no Name: $shortcut" >&2
+        exit 1
+    }
+    grep -q '^Exec=' "$shortcut_file" || {
+        echo "desktop shortcut has no Exec: $shortcut" >&2
+        exit 1
+    }
+    ! grep -q '^NoDisplay=true' "$shortcut_file" || {
+        echo "desktop shortcut is hidden by NoDisplay: $shortcut" >&2
+        exit 1
+    }
+    ! grep -q '^Hidden=true' "$shortcut_file" || {
+        echo "desktop shortcut is hidden by Hidden: $shortcut" >&2
+        exit 1
+    }
+done
+
+# (8) The screen keyboard is onboard now; the retired matchbox-keyboard must
+# be neither installed nor referenced by the supervisor.
+grep -qx 'Package: onboard' "$FULL_ROOT/var/lib/dpkg/status" || {
+    echo 'onboard is not installed' >&2
+    exit 1
+}
+if grep -qx 'Package: matchbox-keyboard' "$FULL_ROOT/var/lib/dpkg/status" ||
+    grep -qx 'Package: matchbox-keyboard-im' "$FULL_ROOT/var/lib/dpkg/status"; then
+    echo 'matchbox-keyboard is still installed' >&2
+    exit 1
+fi
+OSKD_HELPER="$WORK/winduxedu-oskd"
+cat_image_file 'usr/local/bin/winduxedu-oskd' "$OSKD_HELPER"
+grep -q '\["onboard"\]' "$OSKD_HELPER" || {
+    echo 'winduxedu-oskd does not start onboard' >&2
+    exit 1
+}
+# Only the launch command matters here: the helper still documents the swap in
+# its docstring and comments.
+! grep -q '\["matchbox-keyboard"\]' "$OSKD_HELPER"
+
+# (9) (10) List every terminal record All Apps would show.  Debian ships
+# debian-xterm.desktop / debian-uxterm.desktop rather than xterm.desktop --
+# which is why the old removal silently never matched -- and their bare
+# "xterm" Exec is also why the Start menu terminal had the wrong font.
+# NoDisplay records are invisible and are only listed for reference.
+visible_terminals=0
+for stock_entry in "$FULL_ROOT"/usr/share/applications/*.desktop \
+    "$FULL_ROOT"/usr/local/share/applications/*.desktop; do
+    [ -f "$stock_entry" ] || continue
+    grep -Eq '^Exec=([^[:space:]]*/)?(u|l|koi8r)?xterm([[:space:]]|$)' "$stock_entry" ||
+        continue
+    if grep -q '^NoDisplay=true' "$stock_entry" ||
+        grep -q '^Hidden=true' "$stock_entry"; then
+        echo "  (hidden) ${stock_entry#$FULL_ROOT/}"
+        continue
+    fi
+    visible_terminals=$((visible_terminals + 1))
+    echo "  ${stock_entry#$FULL_ROOT/}"
+done
+echo "  visible stock terminal records: $visible_terminals (0 expected)"
+if [ "$visible_terminals" -ne 0 ]; then
+    echo 'All Apps still exposes a stock terminal record' >&2
+    exit 1
+fi
+# Every entry point runs through the profile wrapper.
+XTERM_WRAPPER="$WORK/xterm-wrapper"
+cat_image_file 'usr/local/bin/xterm' "$XTERM_WRAPPER"
+grep -q -- '-fa "DejaVu Sans Mono,Noto Sans CJK SC"' "$XTERM_WRAPPER"
+grep -q 'XTerm\*cjkWidth:false' "$XTERM_WRAPPER"
+
+# (11) Every sidebar mini-app entry point must survive a bare execve: a script
+# without a shebang makes .NET's Process.Start do nothing at all.
+for miniapp in "$FULL_ROOT"/etc/EasiSideBar/MiniApps/*; do
+    [ -f "$miniapp" ] || continue
+    [ -s "$miniapp" ] || continue
+    miniapp_exec="$(sed -n 's/^ExecutablePath=//p' "$miniapp" | head -n1)"
+    [ -n "$miniapp_exec" ] || continue
+    miniapp_target="$FULL_ROOT$miniapp_exec"
+    [ -f "$miniapp_target" ] || {
+        echo "sidebar entry point missing: $miniapp_exec" >&2
+        exit 1
+    }
+    case "$(head -c4 "$miniapp_target" | od -An -tx1 | tr -d ' \n')" in
+        7f454c46* | 2321*) ;;
+        *)
+            # The hook leaves a non-ELF binary alone (an interpreter line
+            # would corrupt it), but a *text* target without a shebang is the
+            # exact "click does nothing" failure this item is about.
+            if LC_ALL=C grep -Iq '' "$miniapp_target"; then
+                echo "sidebar entry point has no shebang: $miniapp_exec" >&2
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+# (12) Nothing pulls pipewire in -- ElevenDE starts through a system service,
+# not a systemd user session -- so the session owns an audio bootstrap and a
+# shortcut repair loop, and both must be registered with the helper list.
+AUDIO_HELPER="$WORK/winduxedu-audio-session"
+cat_image_file 'usr/local/bin/winduxedu-audio-session' "$AUDIO_HELPER"
+grep -q 'pactl info' "$AUDIO_HELPER"
+grep -q 'pipewire-pulse' "$AUDIO_HELPER"
+TIDY_HELPER="$WORK/winduxedu-desktop-tidy"
+cat_image_file 'usr/local/bin/winduxedu-desktop-tidy' "$TIDY_HELPER"
+grep -q 'repair_dir' "$TIDY_HELPER"
+
+# (5) The education switches must be observable, and every source the applier
+# restores from must exist: otherwise the page reverts itself two seconds later
+# ("勾选后自动取消") and 希沃管家开机自启 can never come back at all.
+EDU_SETTINGS="$WORK/winduxedu-edu-settings"
+cat_image_file 'usr/local/bin/winduxedu-edu-settings' "$EDU_SETTINGS"
+grep -q '^escalate() {' "$EDU_SETTINGS"
+grep -q 'edu-escalation.log' "$EDU_SETTINGS"
+! grep -q 'exec pkexec' "$EDU_SETTINGS"
+EDU_APPLY="$WORK/winduxedu-edu-apply"
+cat_image_file 'usr/local/libexec/winduxedu-edu-apply' "$EDU_APPLY"
+grep -q 'restore_autostart com.seewo.terminalmanager.desktop required' "$EDU_APPLY"
+grep -q 'restore_autostart com.seewo.easisidebar.desktop required' "$EDU_APPLY"
+grep -q 'sanitize_autostart' "$EDU_APPLY"
+# The switch key must only become visible once the effect really happened, or
+# a failed escalation still looks like a success and the page reverts a
+# correct value instead of reporting the failure.
+apply_line="$(grep -n 'sidebar-autostart) apply_sidebar' "$EDU_APPLY" |
+    cut -d: -f1 || true)"
+persist_line="$(grep -n '^persist_key$' "$EDU_APPLY" | tail -n1 |
+    cut -d: -f1 || true)"
+if [ -z "$apply_line" ] || [ -z "$persist_line" ] ||
+    [ "$persist_line" -le "$apply_line" ]; then
+    echo 'winduxedu-edu-apply must persist the switch key only after the effect' >&2
+    exit 1
+fi
+# Every 希沃 package the settings page labels has to be reachable from the
+# uninstall button, otherwise clicking it silently does nothing.
+EDU_UNINSTALL="$WORK/winduxedu-edu-uninstall"
+cat_image_file 'usr/local/libexec/winduxedu-edu-uninstall' "$EDU_UNINSTALL"
+for seewo_pkg in $(grep -oE 'com\.seewo\.[a-z0-9.]+' "$EDU_SETTINGS" | sort -u); do
+    grep -q "$seewo_pkg" "$EDU_UNINSTALL" || {
+        echo "seewo package $seewo_pkg is offered by the settings page but missing from the uninstall allow-list" >&2
+        exit 1
+    }
+done
+# And hook 1550 must really have kept the restore copy (it backs the vendor
+# autostart entry up before dropping it, seeding from the menu entry when the
+# vendor deb installs none).
+[ -s "$FULL_ROOT/usr/share/winduxedu/vendor-autostart/com.seewo.terminalmanager.desktop" ] || {
+    echo '希沃管家 autostart entry was not backed up; 教育版设置 cannot restore it' >&2
+    exit 1
+}
 
 # The collected proprietary teaching applications must be installed: eight
 # collected apps plus the seven sidebar components (希沃侧边栏, its UDI hotspot

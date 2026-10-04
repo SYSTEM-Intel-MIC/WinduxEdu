@@ -19,7 +19,7 @@ Copyright © 2026 **SYSTEM-Intel-MIC**。除文件另有说明外，WinduxEdu �
 | windowshit | `5eac6c1d8e3d126bbbc03c76d11edd9e2badc718` [6] | MIT | 命令以 `winduxedu-` 前缀安装，避免覆盖 Debian 原生命令；涉及电源的命令仍受系统权限与确认限制。 |
 | WinSAT | `dc292e6c34d089f9b5718d44744d54a40dbb818e` [7] | WTFPL | 按需运行的基准测试，不自动启动。 |
 | linux-winver | 固定提交 [8] | GPL-3.0 | 作为“About WinduxEdu”独立 DEB 构建，并保留 GPL 源码与许可证。 |
-| Matchbox-keyboard（触摸键盘） | Debian Bookworm `matchbox-keyboard` `0.2+git20160713-1` [11] | GPL-2-or-later | 仅从 Debian `main` 官方源安装官方二进制（含 `matchbox-keyboard-im`），不打补丁、不重打包；来源与版本声明见 [`docs/HARDWARE-COMPATIBILITY.md`](docs/HARDWARE-COMPATIBILITY.md) §4（触屏输入/无障碍组件，不属于教学软件）。 |
+| Onboard（触摸键盘） | Debian Bookworm `onboard` `1.4.1-5`（含 `onboard-data`）[11] | GPL-3.0 | 仅从 Debian `main` 官方源安装官方二进制，不打补丁、不重打包；来源与版本声明见 [`docs/HARDWARE-COMPATIBILITY.md`](docs/HARDWARE-COMPATIBILITY.md) §4（触屏输入/无障碍组件，不属于教学软件）。 |
 | windowsuninstaller/mmclinux | 用户指定地址在审查时不可获取 | 未知 | GitHub API 返回 404，且未找到可验证替代公开来源，因此**未被集成**。提供可审计 URL 与许可证后才可加入。 |
 
 ## 非开源软件收录区（edu-software/）
@@ -58,5 +58,5 @@ WinduxEdu 自有源码、配置和构建脚本在本仓库公开。`packages/sou
 [6]: https://github.com/HelloAIXIAOJI/windowshit "windowshit"
 [7]: https://github.com/WhatDamon/WinSAT "WinSAT"
 [8]: https://github.com/DeepslateQAQ/linux-winver "linux-winver"
-[11]: https://wiki.debian.org/Teams/DebianMatchboxProject "Debian Matchbox project"
+[11]: https://github.com/onboard-osk/onboard "Onboard"
 [12]: https://github.com/HaydenReeve/WindowsIcons "WindowsIcons"

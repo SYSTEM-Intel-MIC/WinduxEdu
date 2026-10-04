@@ -24,7 +24,7 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 
 教学软件只有一类，边界不可混淆（完整声明见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)）：
 
-> 屏幕键盘（`matchbox-keyboard`）**不属于教学软件**：它是触屏输入/无障碍组件，随硬件兼容层
+> 屏幕键盘（`onboard`）**不属于教学软件**：它是触屏输入/无障碍组件，随硬件兼容层
 > [`config/package-lists/winduxedu-compat.list.chroot`](config/package-lists/winduxedu-compat.list.chroot) 安装，
 > 来源与版本声明见 [`docs/HARDWARE-COMPATIBILITY.md`](docs/HARDWARE-COMPATIBILITY.md) §4。
 
@@ -91,7 +91,7 @@ WinduxEdu 对每个集成组件提供明确的 ElevenDE 图标别名，而不是
 | Windows Commands | [HelloAIXIAOJI/windowshit](https://github.com/HelloAIXIAOJI/windowshit) | Rust 1.95 构建；所有命令以 `winduxedu-*` 命名空间暴露，避免覆盖 Linux 命令。 | `winduxedu-windowshit` / Terminal 图标；电源命令仍受权限控制。 |
 | WinSAT | [WhatDamon/WinSAT](https://github.com/WhatDamon/WinSAT) | Python 模块打包。 | `winsat` / 芯片图标。 |
 | About WinduxEdu | [DeepslateQAQ/linux-winver](https://github.com/DeepslateQAQ/linux-winver) | GTK4/C 构建。 | `winver` / 系统版本图标。 |
-| Matchbox-keyboard | [Debian Matchbox project](https://wiki.debian.org/Teams/DebianMatchboxProject) | Debian `main` 归档包 `matchbox-keyboard` `0.2+git20160713-1`（含 `matchbox-keyboard-im`），随硬件兼容层安装、不进入来源锁；仅安装官方二进制，不打补丁、不重打包。 | 触屏屏幕键盘，由「教育版设置 → 屏幕键盘」开关控制（登录界面同样生效）；声明见 [`docs/HARDWARE-COMPATIBILITY.md`](docs/HARDWARE-COMPATIBILITY.md) §4。 |
+| Onboard | [onboard-osk/onboard](https://github.com/onboard-osk/onboard) | Debian `main` 归档包 `onboard` `1.4.1-5`（含 `onboard-data`），随硬件兼容层安装、不进入来源锁；仅安装官方二进制，不打补丁、不重打包。 | 触屏屏幕键盘（完整 PC 布局含数字行，位置跨会话保留），由「教育版设置 → 屏幕键盘」开关控制（登录界面同样生效）；声明见 [`docs/HARDWARE-COMPATIBILITY.md`](docs/HARDWARE-COMPATIBILITY.md) §4。 |
 | mmclinux | `windowsuninstaller/mmclinux` | 用户提供的公开地址在审计时无法确认，未进入来源锁、构建、ISO 或菜单。 | **未集成。** 提供可审计来源与许可后才可能评估。 |
 
 ## 构建、验证与发布

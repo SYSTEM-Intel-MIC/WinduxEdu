@@ -100,6 +100,52 @@ write_component_entry winduxedu-widgets.desktop "WinduxEdu Widgets" "WinduxEdu �
 write_component_entry winduxedu-windowshit.desktop "WinduxEdu Commands" "WinduxEdu 命令" winduxedu-windowshit "$ADAPTER winduxedu-windowshit" "System;Utility;"
 write_component_entry winduxedu-winsat.desktop "WinduxEdu Experience Index" "WinduxEdu 体验指数" winduxedu-winsat "$ADAPTER winsat" "System;Utility;"
 write_component_entry winduxedu-winver.desktop "About WinduxEdu" "关于 WinduxEdu" winduxedu-winver "$ADAPTER winver" "System;Settings;"
+# PeaZip keeps its real binary inside its own private directory and does not
+# always install /usr/bin/peazip, so the bare "peazip" Exec written above can
+# resolve to nothing: the entry looks installed but clicking it silently fails
+# (the field report's "PeaZip 打不开").  The package is unpacked by now, so
+# resolve the real entry point and rewrite the record with an absolute path.
+peazip_cmd=peazip
+if ! command -v peazip >/dev/null 2>&1; then
+    for peazip_cand in /usr/bin/peazip /usr/lib/peazip/peazip \
+        /opt/peazip/peazip; do
+        [ -x "$peazip_cand" ] || continue
+        peazip_cmd="$peazip_cand"
+        break
+    done
+    if [ "$peazip_cmd" = peazip ]; then
+        for vendor_peazip in /usr/share/applications/peazip*.desktop; do
+            [ -f "$vendor_peazip" ] || continue
+            vendor_exec="$(sed -n 's/^Exec=//p' "$vendor_peazip" | head -n1)"
+            vendor_exec="${vendor_exec%% *}"
+            vendor_exec="$(printf '%s' "$vendor_exec" | tr -d '"')"
+            case "$vendor_exec" in
+                /*)
+                    if [ -x "$vendor_exec" ]; then
+                        peazip_cmd="$vendor_exec"
+                        break
+                    fi
+                    ;;
+            esac
+        done
+    fi
+fi
+if [ "$peazip_cmd" = peazip ]; then
+    echo "warning: could not resolve PeaZip's entry point; keeping bare Exec" >&2
+else
+    echo "PeaZip entry point resolved to $peazip_cmd"
+    write_component_entry peazip.desktop "PeaZip" "PeaZip 压缩软件" peazip \
+        "$ADAPTER $peazip_cmd %F" "Utility;Archiving;"
+fi
+# Advertise the archive types on the record WinduxEdu points mimeapps.list at,
+# then retire the vendor record so Exec-based de-duplication cannot show two
+# PeaZip icons (or hand the menu a second, differently-spelled launcher).
+printf 'MimeType=application/zip;application/x-7z-compressed;application/gzip;application/x-gzip;application/x-tar;application/x-bzip2;application/x-xz;application/x-compressed-tar;application/x-rar-compressed;\n' \
+    >> /usr/local/share/applications/peazip.desktop
+for vendor_peazip in /usr/share/applications/peazip*.desktop; do
+    [ -f "$vendor_peazip" ] || continue
+    rm -f "$vendor_peazip"
+done
 # Desktop shortcuts use the same entries as All Apps, avoiding duplicate
 # launchers and preserving the package-provided official Edge icon.
 install -d /etc/skel/Desktop
@@ -176,6 +222,29 @@ rm -f /usr/share/applications/guvcview.desktop \
 # "Calibrate Touchscreen" for the same touchscreen tool.
 rm -f /usr/share/applications/xterm.desktop \
       /usr/share/applications/xinput_calibrator.desktop
+# Debian's xterm package does not ship xterm.desktop at all: it ships
+# debian-xterm.desktop (Name=XTerm, Exec="xterm %F") and debian-uxterm.desktop
+# (Name=UXTerm), so the removal above never matched anything and both records
+# stayed visible in All Apps -- that is the "XTerm" icon the field report saw,
+# and its bare "xterm" Exec is also why the Start menu terminal came up with
+# the wrong font while the desktop shortcut was fine.  Sweep every
+# package-provided record whose Exec runs a terminal binary; the curated local
+# copy stays (it is NoDisplay) and the desktop shortcut is unaffected.
+for stock_terminal in /usr/share/applications/*.desktop; do
+    [ -f "$stock_terminal" ] || continue
+    if grep -Eq '^Exec=([^[:space:]]*/)?(u|l|koi8r)?xterm([[:space:]]|$)' \
+        "$stock_terminal"; then
+        echo "Removing stock terminal record from All Apps: $stock_terminal"
+        rm -f "$stock_terminal"
+    fi
+done
+# Nothing may leave a *visible* terminal record behind: the Start menu must
+# offer the pinned 终端 tile and the desktop shortcut only.
+if grep -lE '^Exec=([^[:space:]]*/)?(u|l|koi8r)?xterm([[:space:]]|$)' \
+    /usr/share/applications/*.desktop >/dev/null 2>&1; then
+    echo "a stock terminal record survived the Start menu sweep" >&2
+    exit 1
+fi
 # OpenSSH ships enabled by default but nothing on WinduxEdu uses it: the QEMU
 # smoke boot and the diagnostics probe are serial-console based.  Without host
 # keys or a privilege-separation directory the unit starts at every boot and

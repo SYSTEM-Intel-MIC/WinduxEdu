@@ -149,6 +149,32 @@ jobs:
       - name: Configure WinduxEdu live-build image
         run: |
           set -euxo pipefail
+          # Field report item 6 (apt offered every component twice) could not be
+          # reproduced -- the evidence had already been deleted before it
+          # reached us -- so the lasting fix is this guard: apt gets exactly
+          # one source of truth.  A committed config/apt/sources.list is
+          # *appended to* by live-build and reintroduces the old
+          # "configured multiple times ... sources.list:8" warning, and any
+          # extra config/archives list does the same.  The only list WinduxEdu
+          # may own is winduxedu.list.* (written further down), because
+          # --security false keeps bookworm-security out of live-build's own
+          # generated sources.list.
+          if [ -e config/apt/sources.list ]; then
+            echo "duplicate apt source: config/apt/sources.list must not exist" >&2
+            exit 1
+          fi
+          if [ -d config/archives ]; then
+            for extra in config/archives/*; do
+              [ -e "$extra" ] || continue
+              case "$(basename "$extra")" in
+                winduxedu.list.*) ;;
+                *)
+                  echo "duplicate apt source: unexpected file in config/archives: $extra" >&2
+                  exit 1
+                  ;;
+              esac
+            done
+          fi
           sudo rm -rf lb .build stage cache auto chroot binary binary.tmp *.iso build.log 2>/dev/null || true
           # The rootfs squashfs is compressed with xz: Ubuntu's legacy live-build
           # 3.0~a57 hard-codes "-comp xz" in lb_binary_rootfs and has no

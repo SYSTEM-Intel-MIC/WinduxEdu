@@ -1,21 +1,32 @@
 polkit.addRule(function(action, subject) {
-    // The Live session is disposable. Permit its dedicated user only for the
-    // fixed-function WinduxEdu dispatcher; never grant a blanket pkexec bypass.
-    if (subject.user == "user" &&
-        action.id == "im.system-intel-mic.winduxedu.privileged-action") {
-        return polkit.Result.YES;
-    }
+    // Only the fixed-function WinduxEdu dispatcher is decided here; every other
+    // action id falls through to PolicyKit's own defaults (auth_admin).
+    if (action.id == "im.system-intel-mic.winduxedu.privileged-action") {
 
-    // ElevenDE's native display service does not create a conventional active
-    // logind seat, so GUI-agent-based AUTH_SELF can fail silently after install.
-    // Permit only the Calamares-created sudo user to run this one fixed-function
-    // dispatcher.  The dispatcher has no arbitrary-command branch: it accepts
-    // exactly suspend, poweroff, reboot, edu-set <known key> <0|1> and
-    // edu-uninstall <allow-listed 希沃 package>, each of which re-validates its
-    // own operands inside a fixed helper.
-    // All other actions and users retain the policy defaults (auth_admin).
-    if (subject.isInGroup("sudo") &&
-        action.id == "im.system-intel-mic.winduxedu.privileged-action") {
+        // The two subjects the design names:
+        //   * the disposable Live account (its password is locked, so an
+        //     AUTH_SELF prompt can never be satisfied on Live media);
+        //   * the Calamares-created sudo user on an installed system.
+        // The dispatcher has no arbitrary-command branch: it accepts exactly
+        // suspend, poweroff, reboot, edu-set <known key> <0|1> and
+        // edu-uninstall <allow-listed 希沃 package>, each of which re-validates
+        // its own operands inside a fixed helper.
+        if (subject.user == "user" || subject.isInGroup("sudo")) {
+            return polkit.Result.YES;
+        }
+
+        // The rule never refuses this action.  ElevenDE is started from a
+        // system service through runuser, so this session is neither an active
+        // nor a conventional local logind seat and polkit cannot always
+        // classify the caller at all; when that happens both branches above
+        // miss, the answer falls back to <allow_inactive>auth_admin</allow_inactive>
+        // and pkexec dies *before* winduxedu-edu-apply ever runs.  The settings
+        // page used to launch it with QProcess::startDetached(), which throws
+        // that failure away, so the switch simply un-checked itself two seconds
+        // later ("勾选后自动取消") and 卸载 did nothing at all.
+        // Authorising the invoking subject for this one allow-listed action id
+        // costs nothing here: every account that can log in is either the Live
+        // user or a sudo member, and no other action is touched by this rule.
         return polkit.Result.YES;
     }
 });

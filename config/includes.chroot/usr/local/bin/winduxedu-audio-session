@@ -1,0 +1,90 @@
+#!/bin/sh
+# WinduxEdu audio session bootstrap.
+#
+# ElevenDE is launched by a *system* service through runuser, so there is no
+# systemd user manager to pull pipewire in: nothing was ever starting the sound
+# server, `pactl` had no daemon to talk to, and the education settings page
+# answered "需要 pactl" whenever the teacher tried to switch outputs (field
+# report item 12).  Start the pieces from the session instead, keep them alive
+# for as long as the session lives and take them down again with it.
+#
+# Runs in the foreground on purpose: the session script tracks its helpers by
+# pid file, so a helper must never fork itself away.
+set -u
+
+log() {
+    echo "audio-session: $*"
+}
+
+owned_pids=""
+
+stop_owned() {
+    for pid in $owned_pids; do
+        kill "$pid" 2>/dev/null
+    done
+    exit 0
+}
+trap stop_owned TERM INT
+
+running() {
+    pgrep -u "$(id -u)" -x "$1" >/dev/null 2>&1
+}
+
+start_daemon() {
+    # $1 = process name, rest = command line
+    name="$1"
+    shift
+    if running "$name"; then
+        return 0
+    fi
+    "$@" >/tmp/winduxedu-audio-session-"$name".log 2>&1 &
+    owned_pids="$owned_pids $!"
+    log "started $name (pid $!)"
+}
+
+ensure_audio() {
+    pactl info >/dev/null 2>&1 && return 0
+    start_daemon pipewire pipewire
+    start_daemon wireplumber wireplumber
+    start_daemon pipewire-pulse pipewire-pulse
+    return 1
+}
+
+# pipewire-pulse needs a moment to take over the PulseAudio socket; poll for a
+# while before deciding the server is not coming up.
+wait_for_audio() {
+    tries=0
+    while [ "$tries" -lt 20 ]; do
+        if pactl info >/dev/null 2>&1; then
+            log "pactl is answering"
+            return 0
+        fi
+        tries=$((tries + 1))
+        sleep 1
+    done
+    return 1
+}
+
+if ! command -v pactl >/dev/null 2>&1; then
+    log "pactl is not installed; nothing to supervise"
+    exit 0
+fi
+
+if pactl info >/dev/null 2>&1; then
+    log "audio server already running"
+else
+    ensure_audio
+    wait_for_audio || log "warning: pactl still not answering"
+fi
+
+# Stay resident: if the server dies mid-lesson, bring it back rather than
+# leaving the next output switch broken until the next login.
+while :; do
+    sleep 5
+    if ! pactl info >/dev/null 2>&1; then
+        log "audio server went away; restarting it"
+        owned_pids=""
+        ensure_audio
+        wait_for_audio || log "warning: pactl still not answering"
+    fi
+done

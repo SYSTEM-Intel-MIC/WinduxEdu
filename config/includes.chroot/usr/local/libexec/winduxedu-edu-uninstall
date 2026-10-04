@@ -1,17 +1,25 @@
 #!/bin/sh
 # Root-side one-click uninstaller for a single 希沃 application.  Invoked only
 # through /usr/local/libexec/winduxedu-privileged-action (edu-uninstall).
-# The package list is a fixed allow-list of the four proprietary Seewo
-# packages WinduxEdu collects; nothing else can be reached from here.
+# The package list is a fixed allow-list of the proprietary Seewo packages
+# WinduxEdu collects; nothing else can be reached from here.  Keep it in step
+# with seewo_label() in winduxedu-edu-settings, which is what decides which
+# 卸载 buttons the settings page draws.
 set -eu
 
 pkg="${1:-}"
 
+# Fixed allow-list of the proprietary 希沃 packages WinduxEdu collects.  It must
+# cover every id `list-seewo` can print (winduxedu-edu-settings derives that
+# list from `dpkg-query | com\.seewo\.`), otherwise the settings page offers a
+# 卸载 button that exits 64 before it ever reaches apt -- 桌面批注 was exactly
+# that: added in fc40f42 and labelled by seewo_label(), but never added here.
 case "$pkg" in
     com.seewo.easinote5 | com.seewo.terminalmanager | com.seewo.easicare | \
         com.seewo.easicamera | com.seewo.easisidebar | \
         com.seewo.easiminiapps.desktopscreenshot | com.seewo.easiminiapps.desktoptimer | \
-        com.seewo.easiminiapps.luckyrandom | com.seewo.easiminiapps.rollcall)
+        com.seewo.easiminiapps.luckyrandom | com.seewo.easiminiapps.rollcall | \
+        com.seewo.easiminiapps.desktopinkannotation)
         ;;
     *)
         echo "winduxedu-edu-uninstall: not an allow-listed package: $pkg" >&2

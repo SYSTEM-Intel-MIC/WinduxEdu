@@ -16,10 +16,11 @@ if path is None or not path.is_file():
     raise SystemExit("usage: patch-elevende-session-policy.py PATH/TO/session/elevende-session")
 
 HELPER_STOP = '''    # WinduxEdu session helpers (touch mapping, screen keyboard, Seewo toolbar,
-    # removable-media autorun) write a pid file; only signal a process that is
-    # still that helper, never a recycled pid.  $h already carries the
-    # winduxedu- prefix, so the cmdline check matches the helper's own path.
-    for h in winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar winduxedu-media-notify; do
+    # removable-media autorun, audio session, desktop shortcut repair) write a
+    # pid file; only signal a process that is still that helper, never a
+    # recycled pid.  $h already carries the winduxedu- prefix, so the cmdline
+    # check matches the helper's own path.
+    for h in winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar winduxedu-media-notify winduxedu-audio-session winduxedu-desktop-tidy; do
         [ -f "/tmp/winduxedu-$h.pid" ] || continue
         hpid="$(cat "/tmp/winduxedu-$h.pid" 2>/dev/null)"
         if [ -n "$hpid" ] && [ -r "/proc/$hpid/cmdline" ] && \\
@@ -40,7 +41,7 @@ new = '''# WINDUXEDU session helpers start before the login gate: the screen key
 # has to be available while the lock screen asks for a password, and the
 # touchscreen mapping must be in place before anyone touches the display.
 start_winduxedu_helpers() {
-    for h in winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar winduxedu-media-notify; do
+    for h in winduxedu-touch-fix winduxedu-oskd winduxedu-seewo-toolbar winduxedu-media-notify winduxedu-audio-session winduxedu-desktop-tidy; do
         [ -x "/usr/local/bin/$h" ] || continue
         echo "winduxedu: starting $h"
         /usr/local/bin/$h >>"/tmp/winduxedu-$h.log" 2>&1 &

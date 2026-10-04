@@ -1,0 +1,69 @@
+#!/bin/sh
+# WinduxEdu desktop shortcut repair.
+#
+# Opening one of the Seewo applications writes a .desktop record of its own,
+# and the record it writes has no Name/Icon/Exec: the shell renders that as a
+# blank icon the user cannot click (field report item 7).  Sweep the two places
+# such a record can appear, restore it from the packaged entry when the id is
+# still known, and drop it when nothing usable is left.
+#
+# Runs in the foreground on purpose: the session script tracks its helpers by
+# pid file, so a helper must never fork itself away.
+set -u
+
+POLL=10
+
+log() {
+    echo "desktop-tidy: $*"
+}
+
+repair_dir() {
+    dir="$1"
+    [ -d "$dir" ] || return 0
+    for entry in "$dir"/*.desktop; do
+        [ -f "$entry" ] || continue
+        id="$(basename "$entry" .desktop)"
+        if [ ! -s "$entry" ]; then
+            log "removing empty record $entry"
+            rm -f "$entry"
+            continue
+        fi
+        if ! grep -q '^Name=' "$entry" || ! grep -q '^Exec=' "$entry"; then
+            fixed=""
+            for src in "/usr/share/applications/$id.desktop" \
+                "/usr/local/share/applications/$id.desktop"; do
+                [ -s "$src" ] || continue
+                # Never "repair" a broken record with another broken one.
+                grep -q '^Name=' "$src" && grep -q '^Exec=' "$src" || continue
+                cp -f "$src" "$entry"
+                fixed="$src"
+                break
+            done
+            if [ -n "$fixed" ]; then
+                log "restored $entry from $fixed"
+            else
+                log "removing unusable record $entry"
+                rm -f "$entry"
+                continue
+            fi
+        fi
+        # Those flags belong to the application menu.  On the desktop they can
+        # only produce an icon that refuses to render or to launch.
+        if grep -q '^NoDisplay=true' "$entry" || grep -q '^Hidden=true' "$entry"; then
+            sed -i -e '/^NoDisplay=/d' -e '/^Hidden=/d' "$entry"
+            log "unhid $entry"
+        fi
+    done
+}
+
+DESKTOP_DIR="$HOME/Desktop"
+if command -v xdg-user-dir >/dev/null 2>&1; then
+    user_desktop="$(xdg-user-dir DESKTOP 2>/dev/null)"
+    [ -n "$user_desktop" ] && DESKTOP_DIR="$user_desktop"
+fi
+
+while :; do
+    repair_dir "$DESKTOP_DIR"
+    repair_dir "$HOME/.local/share/applications"
+    sleep "$POLL"
+done

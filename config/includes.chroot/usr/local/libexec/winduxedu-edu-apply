@@ -19,13 +19,22 @@ esac
 
 CONF=/etc/winduxedu/edu-settings.conf
 SAVED=/usr/share/winduxedu/vendor-autostart
+AUTOSTART=/etc/xdg/autostart
 
-mkdir -p /etc/winduxedu
-touch "$CONF"
-tmp="$CONF.tmp.$$"
-grep -v "^${key}=" "$CONF" >"$tmp" || true
-printf '%s=%s\n' "$key" "$value" >>"$tmp"
-mv -f "$tmp" "$CONF"
+mkdir -p /etc/winduxedu "$AUTOSTART"
+
+# The key is written only *after* the switch has really been applied.  Writing
+# it first meant a failed apply still looked like a success, and the settings
+# page -- which reads this file back every two seconds -- then un-checked the
+# switch one tick later with no explanation ("勾选后自动取消").  The file now
+# always means "the effect is in place".
+persist_key() {
+    tmp="$CONF.tmp.$$"
+    touch "$CONF"
+    grep -v "^${key}=" "$CONF" >"$tmp" || true
+    printf '%s=%s\n' "$key" "$value" >>"$tmp"
+    mv -f "$tmp" "$CONF"
+}
 
 mask_unit() {
     # Same contract as hook 1550: activation links go first, then the
@@ -40,18 +49,59 @@ unmask_unit() {
     rm -f "/etc/systemd/system/$1"
 }
 
+# ElevenDE's shell runs an autostart entry only when its own autostart_scan()
+# accepts it (ElevenDE shell/main.c): Hidden=true, an OnlyShowIn that does not
+# mention ElevenDE or a NotShowIn that does all make it skip the file without a
+# word.  A *menu* entry reused as an autostart entry can carry any of those, so
+# drop exactly the keys that would cancel the switch we just turned on.
+sanitize_autostart() {
+    dst="$1"
+    if ! grep -q '^OnlyShowIn=.*ElevenDE' "$dst"; then
+        sed -i '/^OnlyShowIn=/d' "$dst"
+    fi
+    sed -i -e '/^Hidden=true/d' -e '/^NotShowIn=.*ElevenDE/d' "$dst"
+}
+
+# restore_autostart <name> [required]
+# Hook 1550 deletes the vendor entry with a plain `rm -f` and never keeps a
+# copy, so /usr/share/winduxedu/vendor-autostart is empty the first time the
+# switch is turned on: restoring only from there made 希沃管家开机自启 a
+# permanent no-op.  Fall back to the menu entry the build guarantees to exist,
+# then to the vendor export under /opt.  `required` turns "nothing to restore"
+# into a hard failure instead of a switch that reports success and does
+# nothing.
 restore_autostart() {
-    [ -f "$SAVED/$1" ] || return 0
-    install -m 0644 "$SAVED/$1" "/etc/xdg/autostart/$1"
+    name="$1" src=""
+    for candidate in "$SAVED/$name" "/usr/share/applications/$name"; do
+        if [ -s "$candidate" ]; then
+            src="$candidate"
+            break
+        fi
+    done
+    if [ -z "$src" ]; then
+        for candidate in /opt/apps/*/entries/applications/"$name"; do
+            if [ -s "$candidate" ]; then
+                src="$candidate"
+                break
+            fi
+        done
+    fi
+    if [ -z "$src" ]; then
+        [ "${2:-}" = required ] || return 0
+        echo "winduxedu-edu-apply: no entry to restore for $name (looked in $SAVED, /usr/share/applications, /opt/apps/*/entries/applications)" >&2
+        return 1
+    fi
+    install -m 0644 "$src" "$AUTOSTART/$name"
+    sanitize_autostart "$AUTOSTART/$name"
 }
 
 remove_autostart() {
     # Keep a copy so the setting can be switched back on without reinstalling.
     mkdir -p "$SAVED"
-    if [ -f "/etc/xdg/autostart/$1" ]; then
-        cp -f "/etc/xdg/autostart/$1" "$SAVED/$1"
+    if [ -f "$AUTOSTART/$1" ]; then
+        cp -f "$AUTOSTART/$1" "$SAVED/$1"
     fi
-    rm -f "/etc/xdg/autostart/$1"
+    rm -f "$AUTOSTART/$1"
 }
 
 # 希沃管家 autostart cluster.  disable-seewo-network-card.service stays masked
@@ -62,7 +112,9 @@ apply_seewo() {
         if command -v systemctl >/dev/null 2>&1; then
             systemctl enable com.cvte.maxhub.alfred.service >/dev/null 2>&1 || true
         fi
-        restore_autostart com.seewo.terminalmanager.desktop
+        # Required: hook 1550 guarantees this menu entry is present and
+        # non-empty, so a miss here is a broken image, not an optional extra.
+        restore_autostart com.seewo.terminalmanager.desktop required || return 1
         restore_autostart com.cvte.maxhub.alfred.desktop
     else
         mask_unit com.cvte.maxhub.alfred.service
@@ -116,24 +168,49 @@ sidebar_udi_wants() {
 # Wants/mask links only take effect at the next login, which made 教育版设置 →
 # 侧边栏 look dead: flipping the switch changed nothing the user could see.
 # Apply it to the running session as well (user manager for every logged-in
-# account, system manager for the UDI dependency).  Best effort: on a system
-# without a per-user manager nothing is started, and the links still win at
-# the next login.
+# account, system manager for the UDI dependency).
+#
+# Both calls are best effort *and* bounded: ElevenDE never starts a per-user
+# systemd manager (the session is launched from a system service through
+# runuser with dbus-launch only), so `systemctl --user --machine=` has nothing
+# to talk to and used to sit there while pkexec held the whole escalation open
+# -- with stderr thrown away, so nobody could see why the switch never landed.
+run_bounded() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 5 "$@"
+    else
+        "$@"
+    fi
+}
+
 sidebar_units_now() {
     # $1 = start | stop
     command -v systemctl >/dev/null 2>&1 || return 0
-    systemctl daemon-reload >/dev/null 2>&1 || true
-    systemctl "$1" "$sidebar_udi_unit" >/dev/null 2>&1 || true
+    run_bounded systemctl daemon-reload >/dev/null 2>&1 || true
+    run_bounded systemctl "$1" "$sidebar_udi_unit" >/dev/null 2>&1 || true
     for u in $(who 2>/dev/null | awk '{print $1}' | sort -u); do
         [ -n "$u" ] || continue
-        systemctl --user --machine="$u@" daemon-reload >/dev/null 2>&1 || true
-        systemctl --user --machine="$u@" "$1" "$sidebar_user_unit" \
+        u_id="$(id -u "$u" 2>/dev/null || true)"
+        [ -n "$u_id" ] || continue
+        # The per-user bus socket only exists when a user manager does; without
+        # it there is nothing to address and the loop must not block on it.
+        [ -S "/run/user/$u_id/bus" ] || continue
+        run_bounded systemctl --user --machine="$u@" daemon-reload \
+            >/dev/null 2>&1 || true
+        run_bounded systemctl --user --machine="$u@" "$1" "$sidebar_user_unit" \
             >/dev/null 2>&1 || true
     done
 }
 
 apply_sidebar() {
     if [ "$value" = 1 ]; then
+        # ElevenDE has no per-user systemd manager to run the vendor user unit
+        # (see sidebar_units_now), but its shell *does* run every entry in
+        # /etc/xdg/autostart at login (shell/main.c autostart_run).  Plant one
+        # from the vendor menu entry first: that is the path which actually
+        # starts the sidebar on this image, and it is the one that used to be
+        # missing, so the switch did nothing visible at all.
+        restore_autostart com.seewo.easisidebar.desktop required || return 1
         if [ -f "/usr/lib/systemd/user/$sidebar_user_unit" ]; then
             rm -f "/etc/systemd/user/$sidebar_user_unit"
             sidebar_user_wants add
@@ -164,4 +241,7 @@ case "$key" in
     sidebar-autostart) apply_sidebar ;;
 esac
 
+# Only now that the switch really is in place does the key become visible to
+# `winduxedu-edu-settings get`, which is what the settings page reads back.
+persist_key
 echo "winduxedu-edu-apply: $key=$value"

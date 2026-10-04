@@ -1,0 +1,27 @@
+#!/bin/sh
+# WinduxEdu XTerm profile wrapper.
+#
+# ElevenDE, the pinned Start tile and the desktop right-click "终端" entry all
+# launch the bare command "xterm" with no profile, so those windows came up on
+# stock X resources (different face, size and palette) while the desktop
+# shortcut, which spells out -fa/-fs/-xrm, looked right -- that difference is
+# the "开始菜单字体不对" field report.  Inject the same profile here so every
+# entry point renders identically, and pass callers through untouched when they
+# already choose their own font, so nothing that passes options gets doubled up.
+REAL=/usr/bin/xterm
+[ -x "$REAL" ] || exit 127
+
+case " $* " in
+    *" -fa "*|*" -fn "*|*" -font "*|*" -fs "*|*" -xrm "*)
+        exec "$REAL" "$@"
+        ;;
+esac
+
+exec "$REAL" \
+    -fa "DejaVu Sans Mono,Noto Sans CJK SC" \
+    -fs 11 \
+    -xrm "XTerm*cjkWidth:false" \
+    -xrm "XTerm*background:#000000" \
+    -xrm "XTerm*foreground:#f2f2f2" \
+    -xrm "XTerm*cursorColor:#ffffff" \
+    "$@"
