@@ -307,8 +307,8 @@ grep -q '^XTerm\*cjkWidth: false$' "$XTERM_RESOURCES"
 grep -q '^XTerm\*background: #000000$' "$XTERM_RESOURCES"
 
 # The collected proprietary teaching applications must be installed: eight
-# collected apps plus the six sidebar components (希沃侧边栏, its UDI hotspot
-# dependency and four 希沃 miniapps).  希沃管家
+# collected apps plus the seven sidebar components (希沃侧边栏, its UDI hotspot
+# dependency and five 希沃 miniapps, among them 桌面批注).  希沃管家
 # (com.seewo.terminalmanager), whose bogus "libstdc++6 (<< 9)" clause hook 1550
 # rewrites out of the control file before handing it to apt.
 DPKG_STATUS="$FULL_ROOT/var/lib/dpkg/status"
@@ -326,7 +326,8 @@ for edu_package in \
     com.seewo.easiminiapps.desktopscreenshot \
     com.seewo.easiminiapps.desktoptimer \
     com.seewo.easiminiapps.luckyrandom \
-    com.seewo.easiminiapps.rollcall; do
+    com.seewo.easiminiapps.rollcall \
+    com.seewo.easiminiapps.desktopinkannotation; do
     grep -qx "Package: $edu_package" "$DPKG_STATUS" || {
         echo "proprietary teaching application missing from dpkg status: $edu_package" >&2
         exit 1
@@ -382,6 +383,22 @@ for wants_link in \
         exit 1
     fi
 done
+# The 批注 (desktop ink annotation) tool is a *sidebar* miniapp: its postinst
+# drops miniapp.info into /etc/EasiSideBar/MiniApps and the sidebar builds its
+# toolbar entry from that file, so a missing registration means no 批注.
+annotation_info="$FULL_ROOT/etc/EasiSideBar/MiniApps/com.cvte.seewo.desktop_annotation"
+if [ ! -s "$annotation_info" ]; then
+    echo "sidebar annotation miniapp registration missing: ${annotation_info#$FULL_ROOT}" >&2
+    exit 1
+fi
+grep -q 'DesktopInkAnnotation' "$annotation_info" || {
+    echo "sidebar annotation registration does not point at DesktopInkAnnotation" >&2
+    exit 1
+}
+[ -x "$FULL_ROOT/opt/apps/com.seewo.easiminiapps.desktopinkannotation/files/bin/DesktopInkAnnotation" ] || {
+    echo "the annotation binary is missing from the image" >&2
+    exit 1
+}
 # EasiSideBar hard-codes "Noto Sans CJK SC" in its Avalonia host and declares
 # no Depends, so the font is a hard requirement: without it the unit crash-
 # loops with StandardOutput=null and the failure is invisible in the journal.

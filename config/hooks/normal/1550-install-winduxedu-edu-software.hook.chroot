@@ -293,6 +293,18 @@ if [ -e /etc/systemd/user/default.target.wants/com.seewo.easisidebar.service ] |
     echo "the sidebar user unit still has an activation link" >&2
     exit 1
 fi
+
+# 桌面批注 is a sidebar miniapp, not an application: its postinst copies
+# miniapp.info into /etc/EasiSideBar/MiniApps and the sidebar lists it from
+# there.  Without that file the sidebar comes up without 批注.
+if [ ! -s /etc/EasiSideBar/MiniApps/com.cvte.seewo.desktop_annotation ]; then
+    echo "the sidebar annotation miniapp was not registered" >&2
+    exit 1
+fi
+if [ ! -x /opt/apps/com.seewo.easiminiapps.desktopinkannotation/files/bin/DesktopInkAnnotation ]; then
+    echo "the annotation binary is missing" >&2
+    exit 1
+fi
 if [ -e /etc/xdg/autostart/com.seewo.terminalmanager.desktop ]; then
     echo "Seewo Terminal Manager autostart entry survived" >&2
     exit 1

@@ -63,23 +63,24 @@ python3 scripts/assemble-edu-debs.py
 
 ### 装入 Live 镜像
 
-CI 在 staging 阶段执行 `python3 scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages`，把全部 14 个收录 DEB 重组并双层校验进 chroot 树；`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 随后以 `apt-get install -y --no-install-recommends` 逐个安装（安装成功后删除暂存目录，分卷原件不进入 squashfs），并把只自带 `/opt/apps/...` 桌面入口的组件补拷到 `/usr/share/applications/` 保证开始菜单可见。
+CI 在 staging 阶段执行 `python3 scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages`，把全部 15 个收录 DEB 重组并双层校验进 chroot 树；`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 随后以 `apt-get install -y --no-install-recommends` 逐个安装（安装成功后删除暂存目录，分卷原件不进入 squashfs），并把只自带 `/opt/apps/...` 桌面入口的组件补拷到 `/usr/share/applications/` 保证开始菜单可见。
 
-- **14 个收录 DEB 全部安装**，`scripts/validate-winduxedu-live-image.sh` 会在最终 squashfs 的 `var/lib/dpkg/status` 中逐一断言；
+- **15 个收录 DEB 全部安装**，`scripts/validate-winduxedu-live-image.sh` 会在最终 squashfs 的 `var/lib/dpkg/status` 中逐一断言；
 - **希沃管家（com.seewo.terminalmanager）靠重打包装入**：它的 control 声明 `Depends: libstdc++6 (>= 8.3), libstdc++6 (<< 9), dkms`，其中 `<< 9` 在 Debian Bookworm（libstdc++6 12.x）上永远无法满足，会让整个 apt 事务中止。安装钩子在调用 apt 之前用 `dpkg-deb -R` 解包、把 `Depends` 改写为 `libstdc++6 (>= 8.3), dkms`、再 `dpkg-deb -b` 重建。上界是厂商的过度保守约束——包内全部 ELF 的最高需求只有 `GLIBCXX_3.4.22` / `CXXABI_1.3.11`（GCC 5 时代），Bookworm 的 libstdc++6 12 完全向后兼容；重写 control 而不是 `--force-depends` 强装，是为了给后续 apt 运行留下一致的 dpkg 数据库；
 - **厂商的开机副作用在通用 Live 镜像上被关掉**：`com.seewo.terminalmanager.service`、`com.cvte.maxhub.alfred.service`、`disable-seewo-network-card.service` 通过 `/etc/systemd/system` 下指向 `/dev/null` 的软链屏蔽（单元文件本身仍归 dpkg 所有），同时删除 `/etc/xdg/autostart/com.seewo.terminalmanager.desktop` 与 `/home/*/Desktop` 下的副本。三者仍可从开始菜单按需启动；管家的菜单入口原本是 0 字节占位文件，安装钩子会用 postinst 生成在 `/opt/apps/.../entries/applications/` 的真文件覆盖它，校验脚本额外断言该文件非空；
-- **squashfs 用 xz 而非 gzip**：这 14 个包把根文件系统推到 4 GiB 量级，而 ISO9660 level 1/2 单文件上限是 4 GiB − 1，gzip 压缩比不够。恢复 live-build Debian 模式原生的 `xz` 后才有足够余量，构建步骤另外显式断言最终 ISO 小于 4 GiB；
+- **squashfs 用 xz 而非 gzip**：这 15 个包把根文件系统推到 4 GiB 量级，而 ISO9660 level 1/2 单文件上限是 4 GiB − 1，gzip 压缩比不够。恢复 live-build Debian 模式原生的 `xz` 后才有足够余量，构建步骤另外显式断言最终 ISO 小于 4 GiB；
 - `libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；
 - `--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网下载字体，也避免 QQ 的 appindicator 推荐项。
 
 ### 希沃侧边栏与配套组件（sidebar/）
 
-`sidebar/` 收录 6 个包：`com.seewo.easisidebar`（侧边栏本体）、`udi-hotspot-service`（侧边栏依赖的 UDI 热点服务），以及 4 个希沃小工具（截屏、计时器、随机抽选、人数统计）。它们是**第三方互联网软件、非开源**，与 WinduxEdu / SYSTEM-Intel-MIC 无关，来源与免责声明见 [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md)。
+`sidebar/` 收录 7 个包：`com.seewo.easisidebar`（侧边栏本体）、`udi-hotspot-service`（侧边栏依赖的 UDI 热点服务），以及 5 个希沃小工具（批注、截屏、计时器、随机抽选、人数统计）。它们是**第三方互联网软件、非开源**，与 WinduxEdu / SYSTEM-Intel-MIC 无关，来源与免责声明见 [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md)。
 
 - **默认关闭。** 侧边栏注册的是**用户** systemd 单元 `com.seewo.easisidebar.service`，UDI 服务的 postinst 会执行 `systemctl enable` 装一个系统单元。安装钩子把两者一并屏蔽：`/etc/systemd/user/com.seewo.easisidebar.service → /dev/null`（全局屏蔽，对所有账户包括登录界面上的账户生效）与 `/etc/systemd/system/com.ifpdos.udi.hotspot.service → /dev/null`，并清除所有 `.wants` 激活链接；
 - **开关位置。** 设置 → 教育版设置 → 「希沃侧边栏开机自启」（`sidebar-autostart`）。开启时同时解除两者的屏蔽并重建激活链接，因此侧边栏不会脱离其 UDI 依赖单独启动；关闭时反向恢复默认状态；
 - **`fonts-noto-cjk` 是硬性依赖。** 侧边栏的 Avalonia 界面写死了 `Noto Sans CJK SC`，而 DEB 没有声明 `Depends`，缺少该字体会在首帧崩溃并以 `StandardOutput=null` 静默重启。镜像通过 `config/package-lists/winduxedu-desktop.list.chroot` 安装该字体，安装钩子与 `scripts/validate-winduxedu-live-image.sh` 各断言一次；
-- **菜单保持整洁。** 4 个希沃小工具的 `.desktop` 自带 `NoDisplay=true`，只在侧边栏内部注册使用；侧边栏本体保留开始菜单入口，可手动启动。
+- **菜单保持整洁。** 5 个希沃小工具的 `.desktop` 自带 `NoDisplay=true`，只在侧边栏内部注册使用；侧边栏本体保留开始菜单入口，可手动启动。
+- **批注（桌面墨迹）小工具。** `com.seewo.easiminiapps.desktopinkannotation` 的 postinst 把 `miniapp.info` 复制到 `/etc/EasiSideBar/MiniApps/com.cvte.seewo.desktop_annotation`，侧边栏据此列出「批注」入口（`ExecutablePath` 指向厂商自带的 `DesktopInkAnnotation`，参数 `--from-easisidebar`）；安装钩子与校验脚本各断言该注册文件存在，侧边栏开启后即可用。
 
 ### 安装钩子内的厂商适配
 

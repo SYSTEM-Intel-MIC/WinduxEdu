@@ -135,10 +135,11 @@ jobs:
           # opt/winduxedu/ directories root-owned via install -d.
           sudo python3 scripts/assemble-edu-debs.py \
             --output config/includes.chroot/opt/winduxedu/edu-packages
-          # 8 collected teaching applications + 6 sidebar components
-          # (希沃侧边栏, its UDI hotspot dependency and four 希沃 miniapps).
+          # 8 collected teaching applications + 7 sidebar components
+          # (希沃侧边栏, its UDI hotspot dependency and five 希沃 miniapps,
+          # among them 桌面批注).
           test "$(find config/includes.chroot/opt/winduxedu/edu-packages \
-            -maxdepth 1 -name '*.deb' -type f | wc -l)" -eq 14
+            -maxdepth 1 -name '*.deb' -type f | wc -l)" -eq 15
           ls -lh config/includes.chroot/opt/winduxedu/edu-packages
           # The proprietary source parts are only inputs to this staging step;
           # freeing ~1.7 GB gives the chroot/squashfs phases enough headroom.

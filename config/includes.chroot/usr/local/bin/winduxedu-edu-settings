@@ -93,6 +93,7 @@ seewo_label() {
         com.seewo.easiminiapps.desktoptimer) echo "桌面计时器" ;;
         com.seewo.easiminiapps.luckyrandom) echo "随机抽选" ;;
         com.seewo.easiminiapps.rollcall) echo "人数统计" ;;
+        com.seewo.easiminiapps.desktopinkannotation) echo "桌面批注" ;;
         *) echo "$1" ;;
     esac
 }

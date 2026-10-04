@@ -26,8 +26,9 @@
 | `sidebar/` | `com.seewo.easiminiapps.desktoptimer_6.0.0.1078_amd64.deb` | com.seewo.easiminiapps.desktoptimer | 6.0.0.1078 | 11.0 |
 | `sidebar/` | `com.seewo.easiminiapps.luckyrandom_6.0.0.1071_amd64.deb` | com.seewo.easiminiapps.luckyrandom | 6.0.0.1071 | 48.8 |
 | `sidebar/` | `com.seewo.easiminiapps.rollcall_6.0.0.1071_amd64.deb` | com.seewo.easiminiapps.rollcall | 6.0.0.1071 | 46.5 |
+| `sidebar/` | `com.seewo.easiminiapps.desktopinkannotation_6.0.0.1069_amd64.deb` | com.seewo.easiminiapps.desktopinkannotation | 6.0.0.1069 | 10.0 |
 
-合计 14 个文件（原维护者收录的 8 个 + 后续新增的希沃侧边栏组件 6 个），约 1.86 GiB。完整的 `Package` / `Version` / `Architecture` / `Size` / `SHA-256` 机器可读清单见 [`DEB-INVENTORY.tsv`](DEB-INVENTORY.tsv)（制表符分隔，UTF-8）。
+合计 15 个文件（原维护者收录的 8 个 + 后续新增的希沃侧边栏组件 7 个），约 1.87 GiB。完整的 `Package` / `Version` / `Architecture` / `Size` / `SHA-256` 机器可读清单见 [`DEB-INVENTORY.tsv`](DEB-INVENTORY.tsv)（制表符分隔，UTF-8）。
 
 ## 分卷存储
 
