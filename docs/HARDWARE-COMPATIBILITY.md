@@ -5,8 +5,7 @@
 安装清单：
 
 - [`config/package-lists/winduxedu-desktop.list.chroot`](../config/package-lists/winduxedu-desktop.list.chroot)——基础固件（Intel/AMD/Realtek/Atheros/Broadcom 无线、AMD 显卡、Intel 音频）与内核头文件
-- [`config/package-lists/winduxedu-compat.list.chroot`](../config/package-lists/winduxedu-compat.list.chroot)——本兼容性层新增：全量固件、微码、Mesa 工具、蓝牙、PipeWire、libinput 输入栈、摄像头、打印扫描、指纹框架
-- [`config/package-lists/winduxedu-education.list.chroot`](../config/package-lists/winduxedu-education.list.chroot)——教育组件（Matchbox-keyboard）
+- [`config/package-lists/winduxedu-compat.list.chroot`](../config/package-lists/winduxedu-compat.list.chroot)——本兼容性层新增：全量固件、微码、Mesa 工具、蓝牙、PipeWire、libinput 输入栈、摄像头、打印扫描、指纹框架、无障碍与屏幕键盘（Matchbox-keyboard）
 
 软件源：`main contrib non-free non-free-firmware`（live-build 与 `config/archives` 均已启用）。
 
@@ -59,7 +58,26 @@ sudo apt install -t bookworm-backports \
 
 ## 4. 屏幕键盘：matchbox-keyboard
 
-参考清单中建议 `onboard`；WinduxEdu 实际采用 **`matchbox-keyboard`**（Debian `main`，`0.2+git20160713-1`，GPL-2-or-later，见 [`EDU-COMPONENTS.md`](EDU-COMPONENTS.md)），因为它更轻量、无 GTK 依赖负担，适配触摸教学屏。若需要 `onboard`：
+屏幕键盘是**触屏输入 / 无障碍组件，不属于教学软件**：它随硬件兼容层安装，安装清单为
+[`config/package-lists/winduxedu-compat.list.chroot`](../config/package-lists/winduxedu-compat.list.chroot)。
+参考清单中建议 `onboard`；WinduxEdu 实际采用 **`matchbox-keyboard`**，因为它更轻量、无 GTK 依赖负担，适配触摸教学屏。
+
+| 项目 | 值 |
+| --- | --- |
+| 功能 | X11 屏幕虚拟键盘，面向触摸屏 |
+| Debian 源包 | `matchbox-keyboard` |
+| Bookworm 固定版本 | `0.2+git20160713-1`（amd64） |
+| 上游项目 | Matchbox Project（`matchbox.handhelds.org`，作者 Matthew Allum / OpenedHand Ltd） |
+| 许可证 | GPL-2-or-later（依据 Debian `debian/copyright`：GPL v2 or later） |
+| 获取途径 | Debian Bookworm `main`（`http://deb.debian.org/debian`） |
+| 附带包 | `matchbox-keyboard-im`（同版本、同许可证的 GTK 输入模块） |
+| 本仓库改动 | 无。仅通过包清单安装官方二进制，不打补丁、不重打包 |
+| 同清单运行时依赖 | `at-spi2-core`、`python3-pyatspi`（判定输入焦点所依赖的 AT-SPI2 运行时） |
+| 开关 | 教育版设置 → 屏幕键盘（登录界面同样生效） |
+
+Bookworm `main` 区中的包版本在发行版生命周期内不升级（仅安全更新以 `+deb12uN` 修订号变化），因此该版本即构建时可取得的唯一版本；构建清单 `WINDUXEDU-1.0-BUILD-MANIFEST.json` 记录实际安装的包版本以供审计。
+
+若需要 `onboard`：
 
 ```sh
 sudo apt install onboard

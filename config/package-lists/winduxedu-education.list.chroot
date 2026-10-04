@@ -1,9 +1,0 @@
-# WinduxEdu education components from the Debian Bookworm archive.
-# Open source teaching software; sources and versions are declared in
-# docs/EDU-COMPONENTS.md and THIRD-PARTY-NOTICES.md.
-
-# Touch on-screen keyboard (GPL-2-or-later, Matchbox project, Debian source
-# matchbox-keyboard, bookworm version 0.2+git20160713-1) plus its GTK input
-# module so GTK applications can use the virtual keyboard.
-matchbox-keyboard
-matchbox-keyboard-im

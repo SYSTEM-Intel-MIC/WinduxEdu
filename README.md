@@ -1,6 +1,6 @@
 # WinduxEdu 1.0
 
-**WinduxEdu 1.0** 是由 **SYSTEM-Intel-MIC** 维护的 Debian Bookworm AMD64 Live 教育发行版集成层。它以 **ElevenDE 3.6** 为核心 X11 桌面，提供 Windows 风格的开始菜单、任务栏、统一标题栏、资源管理器、设置、任务管理器、运行对话框、中文输入、Calamares 安装器和一组受控集成的 Windows 风格工具，并面向课堂教学内置**开源教育软件**与**按声明收录的专有教学软件**。
+**WinduxEdu 1.0** 是由 **SYSTEM-Intel-MIC** 维护的 Debian Bookworm AMD64 Live 教育发行版集成层。它以 **ElevenDE 3.6** 为核心 X11 桌面，提供 Windows 风格的开始菜单、任务栏、统一标题栏、资源管理器、设置、任务管理器、运行对话框、中文输入、Calamares 安装器和一组受控集成的 Windows 风格工具，并面向课堂教学按声明收录**专有教学软件**，另带**触屏输入与硬件兼容层**（屏幕键盘、固件与输入栈等）。
 
 > `main` 为唯一主干。推送到 `main`（或手动触发）即运行 GitHub Actions：组件包构建 → ISO 组装 → squashfs/QEMU 校验，全部通过后自动创建 **Preview Release**（预发布）并附带 ISO（超过 2 GiB 时自动切分为分卷资产）与 SHA-256 校验文件。
 
@@ -16,21 +16,17 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 | **补丁层** | `packages/elevende/patches/` 与受审计补丁脚本 | 对构建副本应用显示重排、桌面入口、会话策略和图标解析改造。 | 不修改或推送 ElevenDE 上游仓库。 |
 | **桌面集成层** | `config/includes.chroot/`、`config/hooks/normal/` | 统一 ElevenDE 会话变量、标题栏、启动入口、Windows 11 图标和 GTK 控件主题。 | 不替代第三方工具的业务逻辑。 |
 | **Live 输入层** | `scripts/stage-winduxedu-live-inputs.sh` | 只向 Live chroot 放入已校验 DEB、SHA256、清单和执行钩子。 | 不重新下载组件。 |
-| **教育组件层** | `config/package-lists/winduxedu-education.list.chroot`、`edu-software/` | 开源教育组件经 Debian Bookworm 官方源固定版本安装；专有教学软件按声明分卷收录，CI 双层校验重组后安装进 Live 镜像。 | 不修改收录文件，不更换其版本。 |
+| **教学软件层** | `edu-software/` | 专有教学软件按声明分卷收录，CI 双层校验重组后安装进 Live 镜像；Debian 源内的屏幕键盘等输入/无障碍组件归入硬件兼容层的 `winduxedu-compat.list.chroot`，不属于教学软件。 | 不修改收录文件，不更换其版本。 |
 
 这种结构将上游更新、WinduxEdu 适配、包构建和 ISO 组装明确分离。`WINDUXEDU-1.0-BUILD-MANIFEST.json` 同时记录 WinduxEdu 提交、包哈希、来源锁、二进制锁、ElevenDE 图标映射及每个覆盖图标的 SHA-256，便于复核最终 ISO 的输入。
 
 ## 教学软件
 
-教育组件分两类，边界不可混淆（完整声明见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)）：
+教学软件只有一类，边界不可混淆（完整声明见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)）：
 
-### 开源教育组件（Debian Bookworm 官方源，版本固定）
-
-| 组件 | 版本 | 许可证 | 来源 |
-| --- | --- | --- | --- |
-| **Matchbox-keyboard** 触摸虚拟键盘 | `0.2+git20160713-1`（含 `-im`） | GPL-2-or-later | Debian `main`，Matchbox Project |
-
-安装清单：[`config/package-lists/winduxedu-education.list.chroot`](config/package-lists/winduxedu-education.list.chroot)。仅安装官方二进制，不打补丁、不重打包。
+> 屏幕键盘（`matchbox-keyboard`）**不属于教学软件**：它是触屏输入/无障碍组件，随硬件兼容层
+> [`config/package-lists/winduxedu-compat.list.chroot`](config/package-lists/winduxedu-compat.list.chroot) 安装，
+> 来源与版本声明见 [`docs/HARDWARE-COMPATIBILITY.md`](docs/HARDWARE-COMPATIBILITY.md) §4。
 
 ### 专有软件收录区（`edu-software/`，非开源、仅收录）
 
@@ -40,7 +36,7 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 - **与 SYSTEM-Intel-MIC 无关**：本组织非开发者、非分发维护者、不拥有其商标、不提供任何保证；
 - **仅作收录、版本不更换**：`Package`/`Version`/SHA-256 固定于 `edu-software/DEB-INVENTORY.tsv`；
 - 为遵守 GitHub 单文件 100 MB 上限，每个 DEB 以 **50 MiB 分卷**存放（`PARTS-INDEX.tsv` 逐卷哈希，`scripts/assemble-edu-debs.py` 重组并双层校验）。
-- **进入 Live 镜像**：CI 在 staging 阶段用 `scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages` 重组并校验，`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 以 `apt-get install -y --no-install-recommends` 逐个安装进 chroot（安装后删除暂存目录，不进 squashfs）。**希沃管家（com.seewo.terminalmanager）同样安装**：安装钩子先用 `dpkg-deb` 把它 control 里在 Bookworm 上永远无法满足的 `libstdc++6 (<< 9)` 改写掉，再交给 apt，避免整个事务中止；8 个专有教学软件与 7 个希沃侧边栏组件（共 15 个包）由 `scripts/validate-winduxedu-live-image.sh` 在最终 squashfs 的 dpkg status 中逐一断言。该包的 systemd 单元与 `/etc/xdg/autostart` 自启项在通用 Live 镜像上被屏蔽，菜单入口保留可手动启动（详见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)）。`libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；`--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网抓取字体。希沃/钉钉/微信/QQ 等入口若只自带 `/opt/apps/...` 桌面文件，安装钩子会补拷到 `/usr/share/applications/` 保证菜单可见。
+- **进入 Live 镜像**：CI 在 staging 阶段用 `scripts/assemble-edu-debs.py --output config/includes.chroot/opt/winduxedu/edu-packages` 重组并校验，`config/hooks/normal/1550-install-winduxedu-edu-software.hook.chroot` 以 `apt-get install -y --no-install-recommends` 逐个安装进 chroot（安装后删除暂存目录，不进 squashfs）。**希沃管家（com.seewo.terminalmanager）同样安装**：安装钩子先用 `dpkg-deb` 把它 control 里在 Bookworm 上永远无法满足的 `libstdc++6 (<< 9)` 改写掉，再交给 apt，避免整个事务中止；8 个专有教学软件与 7 个希沃侧边栏组件（共 15 个包）由 `scripts/validate-winduxedu-live-image.sh` 在最终 squashfs 的 dpkg status 中逐一断言。该包的后端单元 `com.seewo.terminalmanager.service` 在镜像里保持启用——屏蔽它会让窗口打开后拿不到任何响应，即实测到的 `Cannot read property 'data' of undefined`；只有 `/etc/xdg/autostart` 登录弹窗项由「教育版设置 → 希沃管家开机自启」决定，菜单入口始终可手动启动（详见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)）。`libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；`--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网抓取字体。希沃/钉钉/微信/QQ 等入口若只自带 `/opt/apps/...` 桌面文件，安装钩子会补拷到 `/usr/share/applications/` 保证菜单可见。
 
 声明全文见 [`edu-software/README.md`](edu-software/README.md)。
 
@@ -77,7 +73,7 @@ WinduxEdu 对每个集成组件提供明确的 ElevenDE 图标别名，而不是
 
 ## 集成组件、上游与 WinduxEdu 修改
 
-下表为 WinduxEdu 1.0 的完整第三方组件声明。实际 URL 与不可变提交位于 `packages/sources.lock.tsv`；Copilot 和 PeaZip 的发布 DEB 与 SHA-256 位于 `packages/binaries.lock.tsv`。其中"入口/图标"均表示经过 ElevenDE 启动适配与 Windows 11 图标映射。教育组件（Matchbox-keyboard、专有收录区）见上文"教学软件"与 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)。
+下表为 WinduxEdu 1.0 的完整第三方组件声明。实际 URL 与不可变提交位于 `packages/sources.lock.tsv`；Copilot 和 PeaZip 的发布 DEB 与 SHA-256 位于 `packages/binaries.lock.tsv`。其中"入口/图标"均表示经过 ElevenDE 启动适配与 Windows 11 图标映射。专有收录区见上文「教学软件」与 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)；触屏输入组件 Matchbox-keyboard 见 [`docs/HARDWARE-COMPATIBILITY.md`](docs/HARDWARE-COMPATIBILITY.md) §4。
 
 | 组件 | 上游 | WinduxEdu 包与技术实现 | 入口/图标与安全边界 |
 | --- | --- | --- | --- |
@@ -95,6 +91,7 @@ WinduxEdu 对每个集成组件提供明确的 ElevenDE 图标别名，而不是
 | Windows Commands | [HelloAIXIAOJI/windowshit](https://github.com/HelloAIXIAOJI/windowshit) | Rust 1.95 构建；所有命令以 `winduxedu-*` 命名空间暴露，避免覆盖 Linux 命令。 | `winduxedu-windowshit` / Terminal 图标；电源命令仍受权限控制。 |
 | WinSAT | [WhatDamon/WinSAT](https://github.com/WhatDamon/WinSAT) | Python 模块打包。 | `winsat` / 芯片图标。 |
 | About WinduxEdu | [DeepslateQAQ/linux-winver](https://github.com/DeepslateQAQ/linux-winver) | GTK4/C 构建。 | `winver` / 系统版本图标。 |
+| Matchbox-keyboard | [Debian Matchbox project](https://wiki.debian.org/Teams/DebianMatchboxProject) | Debian `main` 归档包 `matchbox-keyboard` `0.2+git20160713-1`（含 `matchbox-keyboard-im`），随硬件兼容层安装、不进入来源锁；仅安装官方二进制，不打补丁、不重打包。 | 触屏屏幕键盘，由「教育版设置 → 屏幕键盘」开关控制（登录界面同样生效）；声明见 [`docs/HARDWARE-COMPATIBILITY.md`](docs/HARDWARE-COMPATIBILITY.md) §4。 |
 | mmclinux | `windowsuninstaller/mmclinux` | 用户提供的公开地址在审计时无法确认，未进入来源锁、构建、ISO 或菜单。 | **未集成。** 提供可审计来源与许可后才可能评估。 |
 
 ## 构建、验证与发布
@@ -144,7 +141,7 @@ sha256sum -c WinduxEdu-1.0-amd64-livecd.iso.sha256
 
 ## 许可证与安全边界
 
-WinduxEdu 自有集成代码、构建 recipe、补丁、配置、品牌资源和文档按 **GPL-3.0-or-later** 发布，全文见 [`LICENSE`](LICENSE)。根目录 GPL 不会重新授权 MIT、LGPL、WTFPL、Debian 软件包、二进制发布包或未明确许可的上游代码。逐组件来源、固定提交、许可证文本和分发状态见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)；教育组件来源见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)；专有收录区声明见 [`edu-software/README.md`](edu-software/README.md)。
+WinduxEdu 自有集成代码、构建 recipe、补丁、配置、品牌资源和文档按 **GPL-3.0-or-later** 发布，全文见 [`LICENSE`](LICENSE)。根目录 GPL 不会重新授权 MIT、LGPL、WTFPL、Debian 软件包、二进制发布包或未明确许可的上游代码。逐组件来源、固定提交、许可证文本和分发状态见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)；教学软件来源见 [`docs/EDU-COMPONENTS.md`](docs/EDU-COMPONENTS.md)；专有收录区声明见 [`edu-software/README.md`](edu-software/README.md)。
 
 ElevenDE 自有代码按 GPL-3.0-or-later 发布；其 SAS-for-Linux、Explorer-for-Linux 和 runbox-linux 来源仍保留各自边界。Explorer 在 ElevenDE 内经过大幅修改和重构，因此原始上游部分与 ElevenDE 的 GPL 增量必须被区分。[1]
 

@@ -208,13 +208,24 @@ jobs:
           # which apt has deprecated since 2.0 and prints a warning for on
           # every upgrade pass.  Rewrite only that flag wherever live-build
           # uses it, keeping the rest of each command line untouched.
+          # The step runs under `set -o pipefail`, so the grep inside this
+          # loop must not be the thing that decides the exit status: it exits 1
+          # whenever a directory simply does not contain the flag (live-build
+          # keeps it in one of the three roots, not all of them), which failed
+          # the whole configure step on its own.
           for dir in /usr/share/live /usr/lib/live /usr/share/live-build; do
             [ -d "$dir" ] || continue
-            sudo grep -rl -- '--force-yes' "$dir" 2>/dev/null | while read -r f; do
-              sudo sed -i \
-                's/--force-yes/--allow-downgrades --allow-remove-essential --allow-change-held-packages --allow-unauthenticated/g' \
-                "$f"
-            done
+            force_yes_files="$(sudo grep -rl -- '--force-yes' "$dir" 2>/dev/null || true)"
+            if [ -z "$force_yes_files" ]; then
+              continue
+            fi
+            while IFS= read -r f; do
+              if [ -n "$f" ]; then
+                sudo sed -i \
+                  's/--force-yes/--allow-downgrades --allow-remove-essential --allow-change-held-packages --allow-unauthenticated/g' \
+                  "$f"
+              fi
+            done <<< "$force_yes_files"
           done
           # Keep isolinux.bin and every COM32 runtime module from the same
           # syslinux package. In particular, isolinux.cfg -> vesamenu.c32
@@ -385,12 +396,14 @@ jobs:
           This hybrid ISO includes the ElevenDE desktop, WinduxEdu boot and installer branding,
           Chinese Fcitx5 input support, Microsoft Edge, VLC, Image Viewer, PeaZip, WinduxEdu Store,
           the Matchbox touch keyboard from the Debian Bookworm archive,
+          automatic USB media autorun that opens an inserted stick in the file manager,
+          double-click .exe launching through Wine, and touch-screen calibration,
           the maximum-compatibility firmware/driver set, Windows-style system tools built
           from the locked package layer, and the collected proprietary teaching applications
           installed from edu-software/: ONLYOFFICE, DingTalk, QQ, WeChat, Seewo EasiNote,
           EasiCare, EasiCamera and Seewo Terminal Manager (希沃管家). The terminal
-          manager's vendor boot units and session autostart are masked, so it only
-          launches on demand from the application menu.
+          manager's hugo_launcher backend stays enabled so its window works out of the box;
+          only its login-time popup is controlled by 教育版设置 → 希沃管家开机自启.
 
           Verify the ISO before writing it to USB:
 

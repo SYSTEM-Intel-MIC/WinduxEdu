@@ -1,34 +1,14 @@
 # WinduxEdu 教育教学组件来源声明
 
-本文档声明 WinduxEdu 1.0 中全部教育教学软件的**来源、版本与许可证**。组件分为两类：
+本文档声明 WinduxEdu 1.0 中全部**教学软件**的来源、版本与许可证。教学软件只有一类：
 
-1. **开源教育组件**——来自 Debian Bookworm 官方软件源（`deb.debian.org`），版本由 Bookworm 发行版固定；
-2. **专有软件收录区**——非开源、仅收录，独立存放在 [`edu-software/`](../edu-software/)，声明见 [`edu-software/README.md`](../edu-software/README.md)。
+1. **专有软件收录区**——非开源、仅收录，独立存放在 [`edu-software/`](../edu-software/)，声明见 [`edu-software/README.md`](../edu-software/README.md)。
 
-两类组件的边界不可混淆：开源组件受其自身开源许可证约束并可追溯到上游源码；收录区组件**不属于开源软件，与 SYSTEM-Intel-MIC 无关，仅按原样收录且版本不更换**。
+收录区组件**不属于开源软件，与 SYSTEM-Intel-MIC 无关，仅按原样收录且版本不更换**。
 
-## 一、开源教育组件（Debian Bookworm 官方源）
+> 屏幕键盘等 Debian 源内的开源组件**不是教学软件**：`matchbox-keyboard` 属于触屏输入/无障碍组件，随硬件兼容层安装，声明见 [`HARDWARE-COMPATIBILITY.md`](HARDWARE-COMPATIBILITY.md) §4。
 
-安装清单：[`config/package-lists/winduxedu-education.list.chroot`](../config/package-lists/winduxedu-education.list.chroot)。构建时由 live-build 从 Bookworm 归档安装，不经过第三方源，不执行上游安装脚本。
-
-### Matchbox-keyboard（触摸虚拟键盘）
-
-| 项目 | 值 |
-| --- | --- |
-| 功能 | X11 屏幕虚拟键盘，面向触摸屏 |
-| Debian 源包 | `matchbox-keyboard` |
-| Bookworm 固定版本 | `0.2+git20160713-1`（amd64） |
-| 上游项目 | Matchbox Project（`matchbox.handhelds.org`，作者 Matthew Allum / OpenedHand Ltd） |
-| 许可证 | GPL-2-or-later（依据 Debian `debian/copyright`：GPL v2 or later） |
-| 获取途径 | Debian Bookworm `main`（`http://deb.debian.org/debian`） |
-| 附带包 | `matchbox-keyboard-im`（同版本、同许可证的 GTK 输入模块） |
-| 本仓库改动 | 无。仅通过包清单安装官方二进制，不打补丁、不重打包 |
-
-### 版本固定说明
-
-Debian Bookworm 为稳定发行版，其 `main` 区中的包版本在发行版生命周期内不升级（仅安全更新以 `+deb12uN` 修订号变化）。上述版本即构建时可取得的唯一版本，满足"版本不更换"要求；构建清单 `WINDUXEDU-1.0-BUILD-MANIFEST.json` 会记录实际安装的包版本以供审计。
-
-## 二、专有软件收录区（edu-software/）
+## 一、专有软件收录区（edu-software/）
 
 以下组件**均为专有（非开源）软件，与 SYSTEM-Intel-MIC 无关，本仓库仅作收录**，按原维护者分类以独立文件夹存放，版本一律不更换。详细声明与逐文件 SHA-256 见 [`edu-software/README.md`](../edu-software/README.md) 与 [`edu-software/DEB-INVENTORY.tsv`](../edu-software/DEB-INVENTORY.tsv)。
 
@@ -67,7 +47,7 @@ CI 在 staging 阶段执行 `python3 scripts/assemble-edu-debs.py --output confi
 
 - **15 个收录 DEB 全部安装**，`scripts/validate-winduxedu-live-image.sh` 会在最终 squashfs 的 `var/lib/dpkg/status` 中逐一断言；
 - **希沃管家（com.seewo.terminalmanager）靠重打包装入**：它的 control 声明 `Depends: libstdc++6 (>= 8.3), libstdc++6 (<< 9), dkms`，其中 `<< 9` 在 Debian Bookworm（libstdc++6 12.x）上永远无法满足，会让整个 apt 事务中止。安装钩子在调用 apt 之前用 `dpkg-deb -R` 解包、把 `Depends` 改写为 `libstdc++6 (>= 8.3), dkms`、再 `dpkg-deb -b` 重建。上界是厂商的过度保守约束——包内全部 ELF 的最高需求只有 `GLIBCXX_3.4.22` / `CXXABI_1.3.11`（GCC 5 时代），Bookworm 的 libstdc++6 12 完全向后兼容；重写 control 而不是 `--force-depends` 强装，是为了给后续 apt 运行留下一致的 dpkg 数据库；
-- **厂商的开机副作用在通用 Live 镜像上被关掉**：`com.seewo.terminalmanager.service`、`com.cvte.maxhub.alfred.service`、`disable-seewo-network-card.service` 通过 `/etc/systemd/system` 下指向 `/dev/null` 的软链屏蔽（单元文件本身仍归 dpkg 所有），同时删除 `/etc/xdg/autostart/com.seewo.terminalmanager.desktop` 与 `/home/*/Desktop` 下的副本。三者仍可从开始菜单按需启动；管家的菜单入口原本是 0 字节占位文件，安装钩子会用 postinst 生成在 `/opt/apps/.../entries/applications/` 的真文件覆盖它，校验脚本额外断言该文件非空；
+- **希沃管家的后端常开，只有登录弹窗归开关管**：`com.seewo.terminalmanager.service`（`hugo_launcher --runmode=daemon`，希沃管家窗口要对话的后端）在镜像里保持 **enabled**（`/etc/systemd/system/multi-user.target.wants` 软链）——屏蔽它时窗口照样能从开始菜单打开，却拿不到任何响应，正是实测到的 `Cannot read property 'data' of undefined`。`com.cvte.maxhub.alfred.service` 与 `disable-seewo-network-card.service` 仍通过 `/etc/systemd/system` 下指向 `/dev/null` 的软链屏蔽（单元文件本身仍归 dpkg 所有）。登录时是否自动弹出管家窗口由 `教育版设置 → 希沃管家开机自启` 决定：默认删除 `/etc/xdg/autostart/com.seewo.terminalmanager.desktop` 与 `/home/*/Desktop` 下的副本，开启时恢复；窗口本身始终可从开始菜单启动。管家的菜单入口原本是 0 字节占位文件，安装钩子会用 postinst 生成在 `/opt/apps/.../entries/applications/` 的真文件覆盖它，校验脚本额外断言该文件非空；
 - **squashfs 用 xz 而非 gzip**：这 15 个包把根文件系统推到 4 GiB 量级，而 ISO9660 level 1/2 单文件上限是 4 GiB − 1，gzip 压缩比不够。恢复 live-build Debian 模式原生的 `xz` 后才有足够余量，构建步骤另外显式断言最终 ISO 小于 4 GiB；
 - `libappindicator3-1` 依赖由 Bookworm `main` 的 `libayatana-appindicator3-1`（`Provides: libappindicator3-1`）满足；
 - `--no-install-recommends` 避免 ONLYOFFICE 的 `ttf-mscorefonts-installer` 在安装期联网下载字体，也避免 QQ 的 appindicator 推荐项。

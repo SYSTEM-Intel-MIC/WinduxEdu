@@ -65,8 +65,12 @@ xinput-calibrator
 xinput
 
 # 无障碍与屏幕键盘（教育版设置：屏幕键盘开关，登录界面同样生效）
-# matchbox-keyboard 见 winduxedu-education.list.chroot；此处提供其判定输入焦点
-# 所依赖的 AT-SPI2 运行时（Debian 包 at-spi2-core + python3-pyatspi）。
+# 屏幕键盘是触屏输入/无障碍组件，不是教学软件，因此随本兼容层安装：
+# 声明见 docs/HARDWARE-COMPATIBILITY.md §4（Debian main，GPL-2-or-later，
+# matchbox-keyboard + 同版本同许可证的 GTK 输入模块 matchbox-keyboard-im）。
+matchbox-keyboard
+matchbox-keyboard-im
+# 判定输入焦点所依赖的 AT-SPI2 运行时（Debian 包 at-spi2-core + python3-pyatspi）。
 at-spi2-core
 python3-pyatspi
 
