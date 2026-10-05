@@ -9,10 +9,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: winduxedu-live-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   build:
     name: Build WinduxEdu LiveCD and installer image
