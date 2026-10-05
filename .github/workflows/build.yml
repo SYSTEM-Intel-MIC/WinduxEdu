@@ -175,7 +175,11 @@ jobs:
           # scripts/prepare-winduxedu-live-build-compression.sh used to patch
           # that stanza to gzip.  --compression only picks the tarball
           # compressor, whose accepted values here are bzip2|gzip|lzip|none.
-          sudo lb config \
+          # live-build 3.0~a57 doesn't expose --mirror-debian-security as a CLI
+          # option; set it via LB_MIRROR_DEBIAN_SECURITY env var so the generated
+          # sources.list uses the correct bookworm-security suite at debian-security.
+          export LB_MIRROR_DEBIAN_SECURITY="http://security.debian.org/debian-security"
+          sudo -E lb config \
             --ignore-system-defaults \
             --mode debian \
             --initramfs live-boot \
@@ -185,7 +189,6 @@ jobs:
             --linux-packages linux-image \
             --archive-areas "main contrib non-free non-free-firmware" \
             --mirror-debian "http://deb.debian.org/debian" \
-            --mirror-debian-security "http://security.debian.org/debian-security" \
             --keyring-packages "debian-archive-keyring" \
             --binary-images iso-hybrid \
             --compression gzip \
