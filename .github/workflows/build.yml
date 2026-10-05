@@ -155,25 +155,18 @@ jobs:
           # one source of truth.  A committed config/apt/sources.list is
           # *appended to* by live-build and reintroduces the old
           # "configured multiple times ... sources.list:8" warning, and any
-          # extra config/archives list does the same.  The only list WinduxEdu
-          # may own is winduxedu.list.* (written further down), because
-          # --security false keeps bookworm-security out of live-build's own
-          # generated sources.list.
+          # extra config/archives list does the same.
+          # Security is now handled natively by live-build with the correct
+          # mirror (debian-security) and suite (bookworm-security), so no
+          # extra config/archives list is needed.
           if [ -e config/apt/sources.list ]; then
             echo "duplicate apt source: config/apt/sources.list must not exist" >&2
             exit 1
           fi
-          if [ -d config/archives ]; then
-            for extra in config/archives/*; do
-              [ -e "$extra" ] || continue
-              case "$(basename "$extra")" in
-                winduxedu.list.*) ;;
-                *)
-                  echo "duplicate apt source: unexpected file in config/archives: $extra" >&2
-                  exit 1
-                  ;;
-              esac
-            done
+          if [ -d config/archives ] && [ -n "$(ls -A config/archives)" ]; then
+            echo "duplicate apt source: config/archives must be empty" >&2
+            ls -la config/archives >&2
+            exit 1
           fi
           sudo rm -rf lb .build stage cache auto chroot binary binary.tmp *.iso build.log 2>/dev/null || true
           # The rootfs squashfs is compressed with xz: Ubuntu's legacy live-build
@@ -191,7 +184,8 @@ jobs:
             --architectures amd64 \
             --linux-packages linux-image \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --mirror-debian-installer "http://deb.debian.org/debian" \
+            --mirror-debian "http://deb.debian.org/debian" \
+            --mirror-debian-security "http://security.debian.org/debian-security" \
             --keyring-packages "debian-archive-keyring" \
             --binary-images iso-hybrid \
             --compression gzip \
@@ -205,10 +199,6 @@ jobs:
             --apt-recommends false \
             --debian-installer false
 
-          sudo mkdir -p config/archives
-          # Let live-build generate the security line natively (no --security false).
-          # This avoids the "configured multiple times" apt warning caused by our
-          # extra winduxedu.list.binary duplicating the same components/arch.
           # Every WinduxEdu helper must be executable inside the image, not
           # only the handful that used to be listed one by one: the education
           # settings page, the touchscreen calibrator, the on-screen keyboard
