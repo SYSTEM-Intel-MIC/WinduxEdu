@@ -846,12 +846,35 @@ grep -qx "application/zip=peazip.desktop" /etc/xdg/mimeapps.list || {
 # Default image viewer: use Image Viewer (GNOME's eog) instead of Edge.
 # eog.desktop is provided by the eog package; ensure it's installed.
 if [ -f /usr/share/applications/eog.desktop ]; then
+    MIMEAPPS=/etc/xdg/mimeapps.list
+    # Ensure the file exists and has the [Default Applications] section
+    if [ ! -f "$MIMEAPPS" ] || ! grep -q '^\[Default Applications\]' "$MIMEAPPS"; then
+        printf '[Default Applications]\n' > "$MIMEAPPS"
+    fi
     for img_type in \
         image/jpeg image/png image/gif image/bmp image/x-ico image/tiff \
         image/webp image/svg+xml image/x-portable-pixmap image/x-portable-bitmap \
         image/x-portable-graymap image/x-xcf image/x-xcf-gimp; do
-        winduxedu_mime_default "$img_type" eog.desktop
+        # Remove any existing entry for this MIME type
+        grep -v "^$img_type=" "$MIMEAPPS" > "$MIMEAPPS.tmp" 2>/dev/null || true
+        # Append the new entry
+        printf '%s=eog.desktop\n' "$img_type" >> "$MIMEAPPS.tmp"
+        mv -f "$MIMEAPPS.tmp" "$MIMEAPPS"
     done
+    # Verify all image types were written
+    for img_type in \
+        image/jpeg image/png image/gif image/bmp image/x-ico image/tiff \
+        image/webp image/svg+xml image/x-portable-pixmap image/x-portable-bitmap \
+        image/x-portable-graymap image/x-xcf image/x-xcf-gimp; do
+        grep -qx "$img_type=eog.desktop" "$MIMEAPPS" || {
+            echo "Failed to set default for $img_type" >&2
+            cat "$MIMEAPPS" >&2
+            exit 1
+        }
+    done
+    echo "Image viewer MIME defaults set to eog.desktop"
+else
+    echo "warning: eog.desktop not found, skipping image viewer MIME defaults" >&2
 fi
 
 if command -v update-desktop-database >/dev/null 2>&1; then
