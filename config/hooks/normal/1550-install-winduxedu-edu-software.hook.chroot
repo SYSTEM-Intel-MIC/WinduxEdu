@@ -846,6 +846,14 @@ grep -qx "application/zip=peazip.desktop" /etc/xdg/mimeapps.list || {
 # Default image viewer: use Image Viewer (GNOME's eog) instead of Edge.
 # eog.desktop is provided by the eog package; ensure it's installed.
 # Use the shared winduxedu_mime_default() which is proven to work (PeaZip).
+# eog may not be installed yet (package list ordering), so install it if missing.
+if ! [ -f /usr/share/applications/eog.desktop ]; then
+    echo "eog.desktop not found, installing eog package" >&2
+    apt-get update && apt-get install -y --no-install-recommends eog || {
+        echo "Failed to install eog" >&2
+        exit 1
+    }
+fi
 if [ -f /usr/share/applications/eog.desktop ]; then
     echo "DEBUG: Setting image viewer MIME defaults to eog.desktop" >&2
     for img_type in \
