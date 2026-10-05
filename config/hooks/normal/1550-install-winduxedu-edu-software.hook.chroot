@@ -847,11 +847,15 @@ grep -qx "application/zip=peazip.desktop" /etc/xdg/mimeapps.list || {
 # eog.desktop is provided by the eog package; ensure it's installed.
 # Use the shared winduxedu_mime_default() which is proven to work (PeaZip).
 if [ -f /usr/share/applications/eog.desktop ]; then
+    echo "DEBUG: Setting image viewer MIME defaults to eog.desktop" >&2
     for img_type in \
         image/jpeg image/png image/gif image/bmp image/x-ico image/tiff \
         image/webp image/svg+xml image/x-portable-pixmap image/x-portable-bitmap \
         image/x-portable-graymap image/x-xcf image/x-xcf-gimp; do
+        echo "DEBUG: Setting $img_type = eog.desktop" >&2
         winduxedu_mime_default "$img_type" eog.desktop
+        echo "DEBUG: After winduxedu_mime_default for $img_type:" >&2
+        grep "^$img_type=" /etc/xdg/mimeapps.list >&2 || echo "DEBUG: NOT FOUND after setting" >&2
     done
     # Verify all image types were written (mirror PeaZip validation style)
     for img_type in \
@@ -860,6 +864,7 @@ if [ -f /usr/share/applications/eog.desktop ]; then
         image/x-portable-graymap image/x-xcf image/x-xcf-gimp; do
         grep -qx "$img_type=eog.desktop" /etc/xdg/mimeapps.list || {
             echo "Failed to set default for $img_type" >&2
+            echo "DEBUG: Full mimeapps.list content:" >&2
             cat /etc/xdg/mimeapps.list >&2
             exit 1
         }
@@ -867,6 +872,7 @@ if [ -f /usr/share/applications/eog.desktop ]; then
     echo "Image viewer MIME defaults set to eog.desktop"
 else
     echo "warning: eog.desktop not found, skipping image viewer MIME defaults" >&2
+    ls -la /usr/share/applications/eog.desktop 2>&1 | head -5 >&2
 fi
 
 if command -v update-desktop-database >/dev/null 2>&1; then
