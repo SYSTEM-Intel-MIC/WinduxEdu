@@ -107,21 +107,35 @@ write_component_entry winduxedu-winver.desktop "About WinduxEdu" "关于 WinduxE
 # resolve the real entry point and rewrite the record with an absolute path.
 peazip_cmd=peazip
 if ! command -v peazip >/dev/null 2>&1; then
-    # Search more broadly: the binary .deb may install the executable in
-    # non-standard locations (e.g. /usr/lib/peazip/, /opt/peazip/, etc.).
-    # Use find to locate any executable named "peazip" under /usr and /opt.
-    found_peazip="$(find /usr /opt -type f -name 'peazip' -executable 2>/dev/null | head -n1)"
-    if [ -n "$found_peazip" ]; then
-        peazip_cmd="$found_peazip"
-    else
-        # Fallback to the original hardcoded candidates
+    # Strategy 1: ask dpkg for all files from the peazip package, find executables
+    if dpkg -l peazip 2>/dev/null | grep -q '^ii'; then
+        for f in $(dpkg -L peazip 2>/dev/null); do
+            [ -x "$f" ] || continue
+            case "$f" in
+                */peazip|*/peazip.bin)
+                    peazip_cmd="$f"
+                    break
+                    ;;
+            esac
+        done
+    fi
+    # Strategy 2: find any executable named peazip under /usr and /opt
+    if [ "$peazip_cmd" = peazip ]; then
+        found_peazip="$(find /usr /opt -type f -name 'peazip' 2>/dev/null | while read f; do [ -x "$f" ] && echo "$f" && break; done)"
+        if [ -n "$found_peazip" ]; then
+            peazip_cmd="$found_peazip"
+        fi
+    fi
+    # Strategy 3: original hardcoded candidates
+    if [ "$peazip_cmd" = peazip ]; then
         for peazip_cand in /usr/bin/peazip /usr/lib/peazip/peazip \
-            /opt/peazip/peazip; do
+            /opt/peazip/peazip /usr/lib/peazip/peazip.bin; do
             [ -x "$peazip_cand" ] || continue
             peazip_cmd="$peazip_cand"
             break
         done
     fi
+    # Strategy 4: vendor desktop Exec as last resort
     if [ "$peazip_cmd" = peazip ]; then
         for vendor_peazip in /usr/share/applications/peazip*.desktop; do
             [ -f "$vendor_peazip" ] || continue

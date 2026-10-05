@@ -463,9 +463,26 @@ PEAZIP_CMD="${PEAZIP_EXEC#*winduxedu-component-launch }"
 PEAZIP_CMD="${PEAZIP_CMD%% *}"
 case "$PEAZIP_CMD" in
     /*) peazip_resolved="$FULL_ROOT$PEAZIP_CMD" ;;
-    *)  peazip_resolved="$FULL_ROOT/usr/bin/$PEAZIP_CMD" ;;
+    *)
+        # The hook may have resolved to various locations; check all common ones.
+        peazip_resolved=""
+        for cand in \
+            "$FULL_ROOT/usr/bin/$PEAZIP_CMD" \
+            "$FULL_ROOT/usr/local/bin/$PEAZIP_CMD" \
+            "$FULL_ROOT/usr/lib/peazip/$PEAZIP_CMD" \
+            "$FULL_ROOT/opt/peazip/$PEAZIP_CMD"; do
+            if [ -x "$cand" ]; then
+                peazip_resolved="$cand"
+                break
+            fi
+        done
+        if [ -z "$peazip_resolved" ]; then
+            echo "PeaZip entry point does not resolve inside the image: $PEAZIP_CMD" >&2
+            exit 1
+        fi
+        ;;
 esac
-if [ ! -x "$peazip_resolved" ] && [ ! -x "$FULL_ROOT/usr/local/bin/$PEAZIP_CMD" ]; then
+if [ ! -x "$peazip_resolved" ]; then
     echo "PeaZip entry point does not resolve inside the image: $PEAZIP_CMD" >&2
     exit 1
 fi
