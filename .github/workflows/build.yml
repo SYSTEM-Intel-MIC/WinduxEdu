@@ -191,7 +191,6 @@ jobs:
             --architectures amd64 \
             --linux-packages linux-image \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --security false \
             --mirror-debian-installer "http://deb.debian.org/debian" \
             --keyring-packages "debian-archive-keyring" \
             --binary-images iso-hybrid \
@@ -207,20 +206,9 @@ jobs:
             --debian-installer false
 
           sudo mkdir -p config/archives
-          # live-build owns /etc/apt/sources.list: it generates the mirror,
-          # bookworm and bookworm-updates lines from --mirror-debian for both
-          # the chroot and the shipped image.  Supplying a second copy of those
-          # suites (through config/apt/sources.list or an extra
-          # config/archives list) is what made apt answer every component
-          # twice:
-          #   W: Target Packages (non-free-firmware/binary-amd64/Packages) is
-          #      configured multiple times in /etc/apt/sources.list:8 and ...
-          # --security false keeps bookworm-security out of the generated
-          # list, so this single line is the only suite WinduxEdu may add
-          # without colliding with it.
-          cat <<'EOF' | sudo tee config/archives/winduxedu.list.binary
-          deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-          EOF
+          # Let live-build generate the security line natively (no --security false).
+          # This avoids the "configured multiple times" apt warning caused by our
+          # extra winduxedu.list.binary duplicating the same components/arch.
           # Every WinduxEdu helper must be executable inside the image, not
           # only the handful that used to be listed one by one: the education
           # settings page, the touchscreen calibrator, the on-screen keyboard

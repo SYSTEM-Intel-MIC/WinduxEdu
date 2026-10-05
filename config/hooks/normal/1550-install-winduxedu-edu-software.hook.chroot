@@ -482,9 +482,24 @@ winduxedu_desktop_shortcut() {
         return 0
     fi
     install -m 0644 "$found" "/etc/skel/Desktop/${ds_name}.desktop"
+    # Remove menu-only flags that would hide the shortcut on the desktop
     sed -i -e '/^NoDisplay=/d' -e '/^Hidden=/d' \
         -e '/^OnlyShowIn=/d' -e '/^NotShowIn=/d' \
         "/etc/skel/Desktop/${ds_name}.desktop"
+    # Fix icon if it's a bare name that doesn't exist in the theme:
+    # try to find a vendor-installed icon file and point to it directly.
+    icon_field="$(grep '^Icon=' "/etc/skel/Desktop/${ds_name}.desktop" | head -n1 | cut -d= -f2-)"
+    if [ -n "$icon_field" ] && [ ! -f "$icon_field" ]; then
+        # Not an absolute path; check if it exists in the theme
+        if ! gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null | grep -q "^$icon_field"; then
+            # Try to find vendor icon in /opt/apps/<id>/ or /usr/share/icons/
+            vendor_icon="$(find /opt/apps -name "${icon_field}*.png" -o -name "${icon_field}*.svg" 2>/dev/null | head -n1)"
+            if [ -n "$vendor_icon" ]; then
+                sed -i "s|^Icon=.*|Icon=$vendor_icon|" "/etc/skel/Desktop/${ds_name}.desktop"
+                echo "desktop shortcut: fixed icon for ${ds_name} -> $vendor_icon"
+            fi
+        fi
+    fi
     echo "desktop shortcut: ${ds_name} <- ${found}"
 }
 winduxedu_desktop_shortcut 希沃白板 com.seewo.easinote5 easinote
@@ -828,6 +843,17 @@ grep -qx "application/zip=peazip.desktop" /etc/xdg/mimeapps.list || {
     echo "application/zip has no default handler" >&2
     exit 1
 }
+# Default image viewer: use Image Viewer (GNOME's eog) instead of Edge.
+# eog.desktop is provided by the eog package; ensure it's installed.
+if [ -f /usr/share/applications/eog.desktop ]; then
+    for img_type in \
+        image/jpeg image/png image/gif image/bmp image/x-ico image/tiff \
+        image/webp image/svg+xml image/x-portable-pixmap image/x-portable-bitmap \
+        image/x-portable-graymap image/x-xcf image/x-xcf-gimp; do
+        winduxedu_mime_default "$img_type" eog.desktop
+    done
+fi
+
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
     update-desktop-database /usr/local/share/applications >/dev/null 2>&1 || true

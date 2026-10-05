@@ -270,6 +270,7 @@ for path in \
     etc/skel/.config/fcitx5/config \
     etc/skel/.config/fcitx5/profile \
     etc/skel/.config/onlyoffice/DesktopEditors.conf \
+    etc/udev/rules.d/99-winduxedu-automount.rules \
     usr/share/applications/com.seewo.easisidebar.desktop; do
     require_path "$path"
 done
@@ -499,6 +500,26 @@ for vendor_peazip in "$FULL_ROOT"/usr/share/applications/peazip*.desktop; do
     echo "vendor PeaZip record still competes with ours: ${vendor_peazip#$FULL_ROOT/}" >&2
     exit 1
 done
+
+# (5) Image viewer defaults to eog (GNOME Image Viewer) instead of Edge.
+for img_mime in image/jpeg image/png image/gif image/bmp image/x-ico image/tiff \
+    image/webp image/svg+xml image/x-portable-pixmap image/x-portable-bitmap \
+    image/x-portable-graymap image/x-xcf image/x-xcf-gimp; do
+    grep -qx "$img_mime=eog.desktop" "$FULL_ROOT/etc/xdg/mimeapps.list" || {
+        echo "image MIME type $img_mime does not default to eog.desktop" >&2
+        exit 1
+    }
+done
+
+# (6) Automount udev rule for removable media.
+[ -f "$FULL_ROOT/etc/udev/rules.d/99-winduxedu-automount.rules" ] || {
+    echo 'missing 99-winduxedu-automount.rules' >&2
+    exit 1
+}
+grep -q 'RUN+="/usr/bin/udisksctl mount' "$FULL_ROOT/etc/udev/rules.d/99-winduxedu-automount.rules" || {
+    echo 'automount rule does not call udisksctl mount' >&2
+    exit 1
+}
 
 # (7) The requested desktop, on top of 此电脑 / 主目录 / Edge / 终端.
 for shortcut in 希沃白板 班级优化大师 视频展台 希沃管家 微信 QQ 钉钉 ONLYOFFICE; do

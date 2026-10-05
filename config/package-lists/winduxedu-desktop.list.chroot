@@ -82,6 +82,9 @@ calamares-settings-debian
 squashfs-tools
 rsync
 udisks2
+gvfs
+gvfs-backends
+gvfs-fuse
 libblockdev-part2
 libblockdev-fs2
 dosfstools

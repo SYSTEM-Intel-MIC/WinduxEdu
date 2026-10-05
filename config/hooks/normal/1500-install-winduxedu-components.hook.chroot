@@ -126,7 +126,7 @@ if ! command -v peazip >/dev/null 2>&1; then
             peazip_cmd="$found_peazip"
         fi
     fi
-    # Strategy 3: original hardcoded candidates
+    # Strategy 3: original hardcoded candidates (add peazip.bin)
     if [ "$peazip_cmd" = peazip ]; then
         for peazip_cand in /usr/bin/peazip /usr/lib/peazip/peazip \
             /opt/peazip/peazip /usr/lib/peazip/peazip.bin; do
@@ -322,6 +322,16 @@ OnlyShowIn=ElevenDE;
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
 EOF
+
+# Automount removable media (USB drives, SD cards) via udisks2.
+# This udev rule triggers udisksctl mount when a block device with a filesystem
+# appears, so USB sticks and SD cards appear on the desktop automatically.
+install -Dm644 /dev/stdin /etc/udev/rules.d/99-winduxedu-automount.rules <<'EOF'
+# WinduxEdu: auto-mount removable block devices with a filesystem
+ACTION=="add", KERNEL=="sd*|mmcblk*", SUBSYSTEM=="block", ENV{ID_FS_TYPE}=="?*", \
+    RUN+="/usr/bin/udisksctl mount -b /dev/%k --no-user-interaction"
+EOF
+udevadm control --reload-rules || true
 
 # Packages are installed; keeping their archives only increases the ISO.
 rm -rf "$PKG_DIR"
