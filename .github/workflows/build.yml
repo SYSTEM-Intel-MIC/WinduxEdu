@@ -163,10 +163,17 @@ jobs:
             echo "duplicate apt source: config/apt/sources.list must not exist" >&2
             exit 1
           fi
-          if [ -d config/archives ] && [ -n "$(ls -A config/archives)" ]; then
-            echo "duplicate apt source: config/archives must be empty" >&2
-            ls -la config/archives >&2
-            exit 1
+          if [ -d config/archives ]; then
+            for extra in config/archives/*; do
+              [ -e "$extra" ] || continue
+              case "$(basename "$extra")" in
+                winduxedu.list.binary) ;;
+                *)
+                  echo "duplicate apt source: unexpected file in config/archives: $extra" >&2
+                  exit 1
+                  ;;
+              esac
+            done
           fi
           sudo rm -rf lb .build stage cache auto chroot binary binary.tmp *.iso build.log 2>/dev/null || true
           # The rootfs squashfs is compressed with xz: Ubuntu's legacy live-build
@@ -175,11 +182,11 @@ jobs:
           # scripts/prepare-winduxedu-live-build-compression.sh used to patch
           # that stanza to gzip.  --compression only picks the tarball
           # compressor, whose accepted values here are bzip2|gzip|lzip|none.
-          # live-build 3.0~a57 doesn't expose --mirror-debian-security as a CLI
-          # option; set it via LB_MIRROR_DEBIAN_SECURITY env var so the generated
-          # sources.list uses the correct bookworm-security suite at debian-security.
-          export LB_MIRROR_DEBIAN_SECURITY="http://security.debian.org/debian-security"
-          sudo -E lb config \
+          # --security false prevents live-build from generating its own (deprecated
+          # bookworm/updates) security line; we add the correct bookworm-security
+          # line via config/archives/winduxedu.list.binary (binary phase only, to
+          # avoid "configured multiple times" warnings from duplicate suite entries).
+          sudo lb config \
             --ignore-system-defaults \
             --mode debian \
             --initramfs live-boot \
@@ -188,6 +195,7 @@ jobs:
             --architectures amd64 \
             --linux-packages linux-image \
             --archive-areas "main contrib non-free non-free-firmware" \
+            --security false \
             --mirror-debian "http://deb.debian.org/debian" \
             --keyring-packages "debian-archive-keyring" \
             --binary-images iso-hybrid \
@@ -211,6 +219,16 @@ jobs:
             config/includes.chroot/usr/local/bin/* \
             config/includes.chroot/usr/local/sbin/* \
             config/includes.chroot/usr/local/libexec/*
+
+          sudo mkdir -p config/archives
+          # live-build's --security false skips the deprecated bookworm/updates line.
+          # Add the correct bookworm-security line for the binary (installed image) only.
+          # Using .binary (not .chroot) avoids "configured multiple times" warnings
+          # because live-build's generated sources.list has bookworm + bookworm-updates,
+          # and this adds only bookworm-security (different suite, no duplicate).
+          cat <<'EOF' | sudo tee config/archives/winduxedu.list.binary
+          deb [arch=amd64,i386] http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          EOF
           # live-build still calls apt-get --force-yes for its chroot upgrade,
           # which apt has deprecated since 2.0 and prints a warning for on
           # every upgrade pass.  Rewrite only that flag wherever live-build
