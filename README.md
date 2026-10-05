@@ -160,3 +160,4 @@ Start 与 SAS 的电源操作通过 `/usr/local/libexec/winduxedu-privileged-act
 ## 参考
 
 [1]: https://github.com/SYSTEM-Intel-MIC/ElevenDE/tree/c3221d9eaeeca10d989ae1ae596d9cf82d9508e9 "ElevenDE source and license boundary"
+# Trigger rebuild
