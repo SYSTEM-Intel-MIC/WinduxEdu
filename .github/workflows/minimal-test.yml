@@ -1,0 +1,17 @@
+---
+name: Minimal Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Minimal Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Echo hello
+        run: echo "Hello from GitHub Actions"
