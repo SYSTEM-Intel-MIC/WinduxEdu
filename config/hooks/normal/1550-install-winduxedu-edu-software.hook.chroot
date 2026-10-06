@@ -844,18 +844,39 @@ grep -qx "application/zip=peazip.desktop" /etc/xdg/mimeapps.list || {
     exit 1
 }
 # Default image viewer: use Image Viewer (GNOME's eog) instead of Edge.
-# eog.desktop is provided by the eog package; ensure it's installed.
+# eog.desktop is provided by the eog package (already in package list).
 # Use the shared winduxedu_mime_default() which is proven to work (PeaZip).
-# eog may not be installed yet (package list ordering), so install it if missing.
-if ! [ -f /usr/share/applications/eog.desktop ]; then
+# Locate eog.desktop robustly: it may be in /usr/share/applications or elsewhere.
+EOG_DESKTOP=""
+for cand in /usr/share/applications/eog.desktop /usr/local/share/applications/eog.desktop; do
+    if [ -f "$cand" ]; then
+        EOG_DESKTOP="$cand"
+        break
+    fi
+done
+if [ -z "$EOG_DESKTOP" ]; then
+    # Fallback: search dpkg database
+    EOG_DESKTOP="$(dpkg -L eog 2>/dev/null | grep -E 'eog\.desktop$' | head -n1 || true)"
+fi
+if [ -z "$EOG_DESKTOP" ]; then
     echo "eog.desktop not found, installing eog package" >&2
     apt-get update && apt-get install -y --no-install-recommends eog || {
         echo "Failed to install eog" >&2
         exit 1
     }
+    # Re-search after install
+    for cand in /usr/share/applications/eog.desktop /usr/local/share/applications/eog.desktop; do
+        if [ -f "$cand" ]; then
+            EOG_DESKTOP="$cand"
+            break
+        fi
+    done
+    if [ -z "$EOG_DESKTOP" ]; then
+        EOG_DESKTOP="$(dpkg -L eog 2>/dev/null | grep -E 'eog\.desktop$' | head -n1 || true)"
+    fi
 fi
-if [ -f /usr/share/applications/eog.desktop ]; then
-    echo "DEBUG: Setting image viewer MIME defaults to eog.desktop" >&2
+if [ -n "$EOG_DESKTOP" ] && [ -f "$EOG_DESKTOP" ]; then
+    echo "DEBUG: Setting image viewer MIME defaults to eog.desktop (found at $EOG_DESKTOP)" >&2
     for img_type in \
         image/jpeg image/png image/gif image/bmp image/x-ico image/tiff \
         image/webp image/svg+xml image/x-portable-pixmap image/x-portable-bitmap \
@@ -879,8 +900,8 @@ if [ -f /usr/share/applications/eog.desktop ]; then
     done
     echo "Image viewer MIME defaults set to eog.desktop"
 else
-    echo "warning: eog.desktop not found, skipping image viewer MIME defaults" >&2
-    ls -la /usr/share/applications/eog.desktop 2>&1 | head -5 >&2
+    echo "warning: eog.desktop not found after all attempts, skipping image viewer MIME defaults" >&2
+    dpkg -L eog 2>&1 | head -20 >&2
 fi
 
 if command -v update-desktop-database >/dev/null 2>&1; then
