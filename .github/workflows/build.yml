@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     name: Build WinduxEdu LiveCD and installer image
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
       contents: write
