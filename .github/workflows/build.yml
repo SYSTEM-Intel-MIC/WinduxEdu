@@ -9,8 +9,11 @@ on:
 jobs:
   build:
     name: Build WinduxEdu LiveCD and installer image
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
+    permissions:
+      contents: write
+      actions: read
 
     steps:
       - name: Free runner disk space
