@@ -110,12 +110,15 @@ set -e
 cat "$LOG"
 # The guest serial console is the only place early-boot failures (initramfs,
 # live-boot media probes, systemd unit errors) and the smoke-diagnostics dump
-# become visible, so always print its tail next to the visual verdict. 600
-# lines leaves room for the second diagnostics block emitted shortly before
-# the final capture.
+# become visible, so always print its tail next to the visual verdict.  The
+# tail has to cover the *whole* run, not just its end: the display launcher's
+# failure evidence is written at the moment of the first session or Xorg
+# failure -- early -- and losing exactly that block is what makes a black
+# frame unanswerable.  1200 lines fits the boot log plus one evidence report
+# plus both diagnostics blocks with room to spare.
 if [ -s "$WORK/serial.log" ]; then
-    echo "--- guest serial console (last 600 lines) ---"
-    tail -n 600 "$WORK/serial.log"
+    echo "--- guest serial console (last 1200 lines) ---"
+    tail -n 1200 "$WORK/serial.log"
     echo "--- end guest serial console ---"
 fi
 # The early frame is diagnostic context only: it reports whether the desktop

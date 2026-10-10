@@ -170,6 +170,37 @@ DISPLAY_LAUNCHER="$WORK/winduxedu-elevende-display"
 cat_image_file 'usr/local/sbin/winduxedu-elevende-display' "$DISPLAY_LAUNCHER"
 grep -q 'if \[ -f "\$LOGOUT_MARKER" \]' "$DISPLAY_LAUNCHER"
 grep -q 'explicit logout; restarting native ElevenDE session' "$DISPLAY_LAUNCHER"
+# An unexpected session exit must keep the Xorg that is already healthy on VT7
+# and respawn the session instead of ending the service: the end of the service
+# killed the server, and every restart that followed had to reclaim display :0,
+# which a stale /tmp/.X0-lock turned into a permanent Xorg failure loop.
+grep -q 'X_LOCK=/tmp/.X0-lock' "$DISPLAY_LAUNCHER" || {
+    echo 'the display launcher no longer clears a stale Xorg display lock' >&2
+    exit 1
+}
+grep -q 'wait "\$SESSION_PID" || session_rc=\$?' "$DISPLAY_LAUNCHER" || {
+    echo 'the display launcher loses the session status under set -e' >&2
+    exit 1
+}
+grep -q 'session-respawn=' "$DISPLAY_LAUNCHER" || {
+    echo 'the display launcher no longer respawns an unexpected session exit' >&2
+    exit 1
+}
+# The evidence has to survive the failure it documents, which means its own
+# transient unit (a child of this service is killed with the service) and a
+# bounded, once-per-boot report so the smoke run's serial tail keeps it.
+grep -q 'systemd-run --unit=winduxedu-smoke-probe' "$DISPLAY_LAUNCHER" || {
+    echo 'the guest state probe is still a child of the display service' >&2
+    exit 1
+}
+grep -q 'display service failure evidence' "$DISPLAY_LAUNCHER" || {
+    echo 'the display launcher records no failure evidence on the console' >&2
+    exit 1
+}
+grep -q 'x-status dead' "$DISPLAY_LAUNCHER" || {
+    echo 'the display launcher cannot tell a dead Xorg from a dead session' >&2
+    exit 1
+}
 POWER_BRIDGE="$WORK/winduxedu-power-action"
 cat_image_file 'usr/local/bin/winduxedu-power-action' "$POWER_BRIDGE"
 grep -q '^exec pkexec /usr/local/libexec/winduxedu-privileged-action "\$action"$' "$POWER_BRIDGE"
