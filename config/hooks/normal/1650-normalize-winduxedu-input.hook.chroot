@@ -1,0 +1,61 @@
+#!/bin/bash
+set -eu
+
+# Input is the one subsystem a field report cannot be diagnosed from after the
+# fact: Xorg's device list, the libudev tags and the InputClass ordering are
+# all gone once the ISO is burned, and a panel whose touch node never reached
+# X looks exactly like a dead panel.  Check the pieces that decide whether a
+# touchscreen exists at all while the build can still see them, and put the
+# ordering into the build log.
+
+# 1) The X server creates a device only for nodes libudev tagged ID_INPUT and
+#    opens them with the libinput driver.  Without the compatibility layer's
+#    input packages the desktop has no touch path whatsoever.
+for pkg in xserver-xorg-core xserver-xorg-input-libinput xinput \
+    xinput-calibrator libinput-tools udev; do
+    dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | \
+        grep -q 'install ok installed' || {
+        echo "WinduxEdu: input package $pkg is not installed" >&2
+        exit 1
+    }
+done
+
+# 2) A vendor /etc/X11/xorg.conf is parsed after every conf.d directory, so a
+#    ServerFlags section in it that switches hotplug off cannot be overridden
+#    from /etc/X11/xorg.conf.d -- and it is easy to miss, because the keyboard
+#    keeps working while the panel's touch node is simply never added.
+XCONF=/etc/X11/xorg.conf
+if [ -f "$XCONF" ] && \
+        grep -qiE '^[[:space:]]*Option[[:space:]]+"Auto(Add|Enable)Devices"' "$XCONF"; then
+    if grep -qiE '^[[:space:]]*Option[[:space:]]+"Auto(Add|Enable)Devices"[[:space:]]+"(false|off|no|0)"' "$XCONF"; then
+        echo "WinduxEdu: neutralising a vendor AutoAddDevices=false in $XCONF"
+        sed -i -E \
+            's/^([[:space:]]*Option[[:space:]]+"Auto(Add|Enable)Devices"[[:space:]]+")[^"]*(")/\1true\3/I' \
+            "$XCONF"
+    fi
+fi
+
+# 3) "Option Ignore" is decided by the last matching InputClass, so a vendor
+#    snippet that disables the touch node wins purely by sorting after ours.
+for conf in /etc/X11/xorg.conf.d/*.conf; do
+    [ -f "$conf" ] || continue
+    case "$(basename "$conf")" in
+    99-winduxedu-*) continue ;;
+    esac
+    grep -qiE 'Option[[:space:]]+"Ignore"[[:space:]]+"(true|on|yes|1)"' "$conf" || continue
+    if [ "$(basename "$conf")" \> "99-winduxedu-touchscreen.conf" ]; then
+        echo "warning: $conf disables input devices and sorts after the WinduxEdu touchscreen class" >&2
+    fi
+done
+
+# 4) Ground truth for the next report: the order X parses the configuration
+#    directories in (/usr/share first, /etc last) decides every conflict.
+echo "WinduxEdu: X input configuration, in parse order"
+for dir in /usr/share/X11/xorg.conf.d /etc/X11/xorg.conf.d; do
+    [ -d "$dir" ] || continue
+    find "$dir" -maxdepth 1 -type f -name '*.conf' -printf '  %p\n' | sort
+done
+echo "WinduxEdu: touchscreen rescue files"
+ls -l /etc/X11/xorg.conf.d/99-winduxedu-touchscreen.conf \
+    /etc/X11/xorg.conf.d/99-winduxedu-serverflags.conf \
+    /etc/udev/rules.d/99-winduxedu-touchscreen.rules

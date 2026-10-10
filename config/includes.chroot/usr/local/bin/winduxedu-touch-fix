@@ -9,6 +9,13 @@
 # pointer sits pinned in the middle of the screen, while xinput_calibrator
 # reports "no supported device found" or writes a config nothing ever loads.
 #
+# A fourth case is worse and out of reach of anything here: the panel's touch
+# node never became an X device at all, because libudev did not tag it as a
+# touchscreen and libinput refuses an untagged absolute device.  That one is
+# handled at build time (/etc/udev/rules.d/99-winduxedu-touchscreen.rules and
+# /etc/X11/xorg.conf.d/99-winduxedu-touchscreen.conf); when it still happens,
+# the first zero-device tick records the evidence that tells the cases apart.
+#
 # This helper re-applies a known-good mapping a few seconds after X starts and
 # again on every polling tick, and it is what actually consumes the user
 # calibration written by /usr/local/bin/winduxedu-touch-calibrate.
@@ -61,6 +68,48 @@ target_output() {
     printf '%s\n' "$out"
 }
 
+# Nothing above can conjure a device X was never given, and "touch is dead"
+# alone cannot tell the three ways that happens apart: libudev never tagged the
+# node, an InputClass dropped it, or another process holds it exclusively.  On
+# the first tick that finds no touchscreen, record the evidence that
+# distinguishes them -- it is the only place a field report can be answered
+# from, since neither Xorg's device list nor the udev tags are kept anywhere
+# else once the machine is back in the classroom.
+DIAG_DONE=""
+diagnose_missing_touchscreen() {
+    [ -n "$DIAG_DONE" ] && return 0
+    DIAG_DONE=yes
+    {
+        echo "no touchscreen device is present in X; input state follows"
+        echo "--- xinput --list ---"
+        xinput --list 2>&1 || true
+        echo "--- kernel input devices (N: name, H: handlers, B: PROP/ABS) ---"
+        grep -E '^(I:|N: |H: |B: PROP|B: ABS)' /proc/bus/input/devices 2>/dev/null || true
+        echo "--- /dev/input nodes ---"
+        ls -l /dev/input 2>&1 || true
+        if command -v udevadm >/dev/null 2>&1; then
+            echo "--- udev input tags (ID_INPUT_TOUCHSCREEN is what libinput keys on) ---"
+            for node in /dev/input/event*; do
+                [ -e "$node" ] || continue
+                tags="$(udevadm info --query=property --name="$node" 2>/dev/null \
+                    | sed -n 's/^\(ID_INPUT[A-Z_]*\)=.*/\1/p' | tr '\n' ' ')"
+                echo "$node: ${tags:-<untagged>}"
+            done
+        fi
+        if command -v fuser >/dev/null 2>&1 && ls /dev/input/event* >/dev/null 2>&1; then
+            echo "--- event nodes held open (an exclusive grab is invisible to X) ---"
+            fuser -v /dev/input/event* 2>&1 || true
+        fi
+        if command -v libinput >/dev/null 2>&1; then
+            echo "--- libinput device list ---"
+            libinput list-devices 2>&1 | grep -E '^Device|^Capabilities' | head -n 40 || true
+        fi
+        echo "--- xorg input lines ---"
+        grep -iE 'input|libinput|touch|ignoring' /var/log/winduxedu-elevende-xorg.log 2>/dev/null \
+            | tail -n 30 || true
+    } | sed 's/^/touch-fix: /'
+}
+
 apply_once() {
     out="$(target_output)"
     [ -n "$out" ] || return 0
@@ -95,6 +144,10 @@ EOF
         last_sig="$sig"
         log "enabled and mapped $applied touchscreen device(s) to $out (matrix $matrix)"
     fi
+    # Zero devices means the mapping is not the problem: the touch node never
+    # became an X device.  Capture what the kernel, libudev and the X server
+    # think about input, once, so the next report does not have to guess.
+    [ "$applied" -gt 0 ] || diagnose_missing_touchscreen
 }
 
 log "waiting for X on ${DISPLAY:-unset}"

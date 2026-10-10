@@ -456,6 +456,101 @@ fi
 # that would hide it there.  A record that cannot be found is reported instead
 # of failing the build, and the diagnostic below makes it visible either way.
 install -d /etc/skel/Desktop
+# ElevenDE renders a desktop launcher through theme_find(Icon=), and that
+# lookup has two traps every collected vendor DEB walks straight into:
+#   * /opt/apps/<id>/entries/icons/hicolor/... is not a theme directory, so a
+#     bare Icon=<id> is never found there, and
+#   * an absolute Icon= is kept verbatim, and the shell's desktop record used
+#     to be one snprintf call narrower than the vendor path (79+ characters),
+#     so the path it opened did not exist.
+# Either way the launcher came out as a blank generic glyph.  Resolve the art
+# once here, publish it into the icon namespace the shell searches first, and
+# point both the desktop copy and the vendor entry at the short name that
+# survives the record, the Start menu and the taskbar alike.
+WINDUXEDU_ICON_DIR=/usr/local/share/elevende-shell/icons
+winduxedu_publish_icon() {
+    pi_ns="$1"
+    pi_token="$2"
+    pi_key="$3"
+    pi_src=""
+    pi_dir=""
+
+    case "$pi_token" in
+    /*.png|/*.svg)
+        if [ -r "$pi_token" ]; then
+            pi_src="$pi_token"
+            pi_dir="$(dirname "$(dirname "$(dirname "$pi_token")")")"
+            # Only the standard hicolor layout is worth a size-matched search.
+            [ "$(basename "$pi_dir")" = hicolor ] || pi_dir=""
+        fi
+        ;;
+    esac
+
+    if [ -z "$pi_src" ]; then
+        for pi_try in "$pi_token" "$pi_key"; do
+            [ -n "$pi_try" ] || continue
+            pi_try="${pi_try%.png}"
+            pi_try="${pi_try%.svg}"
+            case "$pi_try" in
+            */*|"") continue ;;
+            esac
+            # Largest file first: the shell downsamples the source it is
+            # given, it cannot sharpen a 16 px asset published as 256 px.
+            pi_src="$(find /opt/apps /usr/share/icons /usr/share/pixmaps \
+                    /usr/local/share/icons -type f \
+                    \( -name "$pi_try.png" -o -name "$pi_try.svg" \) \
+                    -printf '%s %p\n' 2>/dev/null | sort -rn | head -n1 \
+                | cut -d' ' -f2-)"
+            [ -n "$pi_src" ] && break
+        done
+    fi
+    if [ -z "$pi_src" ] && [ -d "/opt/apps/$pi_key" ]; then
+        # Last resort: anything the application itself ships still beats the
+        # blank glyph an unresolvable record renders.
+        pi_src="$(find "/opt/apps/$pi_key" -type f -name '*.png' \
+            -printf '%s %p\n' 2>/dev/null | sort -rn | head -n1 | cut -d' ' -f2-)"
+    fi
+    [ -n "$pi_src" ] || return 1
+
+    if [ -z "$pi_dir" ]; then
+        # A bare name found by the search above may itself sit in a theme
+        # tree, where the per-size preference below applies all the same.
+        pi_probe="$(dirname "$(dirname "$(dirname "$pi_src")")")"
+        if [ "$(basename "$pi_probe")" = hicolor ]; then
+            pi_dir="$pi_probe"
+        fi
+    fi
+
+    # theme_find() only ever opens .png and .svg, and the chroot has no image
+    # converter, so any other container format has to fall back to the search.
+    case "$pi_src" in
+    *.png|*.svg) ;;
+    *) return 1 ;;
+    esac
+    pi_ext="${pi_src##*.}"
+    pi_base="$(basename "$pi_src" ".$pi_ext")"
+
+    # Publish every size the shell probes (desktop, taskbar and Start menu ask
+    # for 64/26/... and prefer the nearest larger source), preferring the
+    # vendor's own rendering of that size when it ships one.
+    for pi_size in 32 48 64 128 256; do
+        pi_pick=""
+        if [ -n "$pi_dir" ]; then
+            pi_pick="$(find "$pi_dir" -type f \
+                -path "*/${pi_size}x${pi_size}/*" -name "$pi_base.$pi_ext" \
+                2>/dev/null | sort | head -n1)"
+        fi
+        [ -n "$pi_pick" ] || pi_pick="$pi_src"
+        install -Dm644 "$pi_pick" \
+            "${WINDUXEDU_ICON_DIR}/${pi_size}x${pi_size}/apps/${pi_ns}.${pi_ext}"
+    done
+    if [ "$pi_ext" = svg ]; then
+        install -Dm644 "$pi_src" \
+            "${WINDUXEDU_ICON_DIR}/scalable/apps/${pi_ns}.svg"
+    fi
+    echo "desktop shortcut: icon ${pi_key} <- ${pi_src}"
+    return 0
+}
 winduxedu_desktop_shortcut() {
     ds_name="$1"
     ds_key="$2"
@@ -486,19 +581,20 @@ winduxedu_desktop_shortcut() {
     sed -i -e '/^NoDisplay=/d' -e '/^Hidden=/d' \
         -e '/^OnlyShowIn=/d' -e '/^NotShowIn=/d' \
         "/etc/skel/Desktop/${ds_name}.desktop"
-    # Fix icon if it's a bare name that doesn't exist in the theme:
-    # try to find a vendor-installed icon file and point to it directly.
-    icon_field="$(grep '^Icon=' "/etc/skel/Desktop/${ds_name}.desktop" | head -n1 | cut -d= -f2-)"
-    if [ -n "$icon_field" ] && [ ! -f "$icon_field" ]; then
-        # Not an absolute path; check if it exists in the theme
-        if ! gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null | grep -q "^$icon_field"; then
-            # Try to find vendor icon in /opt/apps/<id>/ or /usr/share/icons/
-            vendor_icon="$(find /opt/apps -name "${icon_field}*.png" -o -name "${icon_field}*.svg" 2>/dev/null | head -n1)"
-            if [ -n "$vendor_icon" ]; then
-                sed -i "s|^Icon=.*|Icon=$vendor_icon|" "/etc/skel/Desktop/${ds_name}.desktop"
-                echo "desktop shortcut: fixed icon for ${ds_name} -> $vendor_icon"
-            fi
-        fi
+
+    ds_icon="$(sed -n 's/^Icon=//p' "/etc/skel/Desktop/${ds_name}.desktop" | head -n1)"
+    ds_ns="$(printf '%s' "$ds_key" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-48)"
+    case "$ds_ns" in
+    ""|-*) ds_ns="winduxedu-$(printf '%s' "$ds_name" | tr -c 'A-Za-z0-9' '-' | cut -c1-40)" ;;
+    esac
+    if winduxedu_publish_icon "$ds_ns" "$ds_icon" "$ds_key"; then
+        # Both records carry the same name: the desktop copy, and the vendor
+        # entry the Start menu, the taskbar and desktop-tidy read back.
+        for ds_target in "/etc/skel/Desktop/${ds_name}.desktop" "$found"; do
+            sed -i "s|^Icon=.*|Icon=${ds_ns}|" "$ds_target"
+        done
+    else
+        echo "warning: no icon art for desktop shortcut ${ds_name} (Icon=${ds_icon:-<none>})" >&2
     fi
     echo "desktop shortcut: ${ds_name} <- ${found}"
 }
@@ -518,7 +614,30 @@ for shortcut in /etc/skel/Desktop/*.desktop; do
         echo "warning: unusable desktop shortcut (no Name/Exec): $shortcut" >&2
         continue
     fi
-    echo "desktop shortcut ok: $(basename "$shortcut") -> $(sed -n 's/^Exec=//p' "$shortcut" | head -n1)"
+    sc_icon="$(sed -n 's/^Icon=//p' "$shortcut" | head -n1)"
+    case "$sc_icon" in
+    "")
+        echo "warning: desktop shortcut has no Icon=: $shortcut" >&2
+        ;;
+    /*)
+        [ -r "$sc_icon" ] || \
+            echo "warning: unreadable Icon= $sc_icon on $shortcut" >&2
+        ;;
+    *)
+        sc_ok=""
+        for sc_ext in png svg; do
+            [ -n "$sc_ok" ] && break
+            for sc_size in 32 48 64 128 256; do
+                [ -r "${WINDUXEDU_ICON_DIR}/${sc_size}x${sc_size}/apps/${sc_icon}.${sc_ext}" ] || continue
+                sc_ok="yes"
+                break
+            done
+        done
+        [ -n "$sc_ok" ] || \
+            echo "warning: Icon= ${sc_icon} of $shortcut is not in the shell icon namespace" >&2
+        ;;
+    esac
+    echo "desktop shortcut ok: $(basename "$shortcut") -> $(sed -n 's/^Exec=//p' "$shortcut" | head -n1) (icon ${sc_icon:-<none>})"
 done
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,36 @@
+# WinduxEdu: keep interactive-panel touch devices visible to the X server.
+#
+# libudev's input_id only calls a device a touchscreen when the HID descriptor
+# says so.  Panels that expose their touch interface as an absolute pointer are
+# tagged ID_INPUT_MOUSE instead; libinput refuses absolute pointers, so X ends
+# up with a keyboard, a mouse cursor and no touch at all -- the reported
+# failure.  Devices without an ID_INPUT tag at all are worse: the X server
+# never even adds them, which is why the rule sets ID_INPUT as well.
+#
+# The device name is the only handle left once the descriptor got it wrong, so
+# every match is spelled with per-letter case classes: udev's glob has no
+# case-insensitive mode and "TouchScreen", "touch screen" and "TOUCHSCREEN"
+# are all seen in the field.  The patterns are kept to "touch screen"/"touch
+# panel"/"multi-touch" so a touchpad (typically named "...TouchPad") never
+# matches, and every guard below additionally requires the touchscreen tag to
+# be missing and the node to be neither touchpad, tablet, pointing stick nor
+# keyboard -- devices already tagged correctly are never rewritten.
+#
+# The X side of the same rescue is
+# /etc/X11/xorg.conf.d/99-winduxedu-touchscreen.conf, which keys on the same
+# names when libudev's tag is missing.
+KERNEL=="event*", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}!="1", \
+    ENV{ID_INPUT_TOUCHPAD}!="1", ENV{ID_INPUT_TABLET}!="1", \
+    ENV{ID_INPUT_POINTINGSTICK}!="1", ENV{ID_INPUT_KEYBOARD}!="1", \
+    ATTRS{name}=="*[Tt][Oo][Uu][Cc][Hh]*[Ss][Cc][Rr][Ee][Ee][Nn]*", \
+    ENV{ID_INPUT}="1", ENV{ID_INPUT_TOUCHSCREEN}="1"
+KERNEL=="event*", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}!="1", \
+    ENV{ID_INPUT_TOUCHPAD}!="1", ENV{ID_INPUT_TABLET}!="1", \
+    ENV{ID_INPUT_POINTINGSTICK}!="1", ENV{ID_INPUT_KEYBOARD}!="1", \
+    ATTRS{name}=="*[Tt][Oo][Uu][Cc][Hh]*[Pp][Aa][Nn][Ee][Ll]*", \
+    ENV{ID_INPUT}="1", ENV{ID_INPUT_TOUCHSCREEN}="1"
+KERNEL=="event*", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}!="1", \
+    ENV{ID_INPUT_TOUCHPAD}!="1", ENV{ID_INPUT_TABLET}!="1", \
+    ENV{ID_INPUT_POINTINGSTICK}!="1", ENV{ID_INPUT_KEYBOARD}!="1", \
+    ATTRS{name}=="*[Mm][Uu][Ll][Tt][Ii]*[Tt][Oo][Uu][Cc][Hh]*", \
+    ENV{ID_INPUT}="1", ENV{ID_INPUT_TOUCHSCREEN}="1"

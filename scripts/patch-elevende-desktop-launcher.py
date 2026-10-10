@@ -9,7 +9,9 @@ build copy so desktop application launchers behave like Windows shortcuts.
 ElevenDE 3.6 grew native launcher handling (gio launch for .desktop files and a
 localized Name= label), so those two hunks are skipped when the pinned upstream
 revision already provides the behavior.  The WinduxEdu-specific launcher icon
-mapping is still required and is re-anchored onto the 3.6 icon chain.
+mapping is still required and is re-anchored onto the 3.6 icon chain, and the
+desktop record's Icon= field is widened so a vendor /opt/apps/... path is not
+silently truncated into an icon that never renders.
 """
 from pathlib import Path
 import sys
@@ -130,6 +132,24 @@ elif old_icon in text:
     applied.append("desktop icon mapping")
 else:
     raise SystemExit("ElevenDE desktop icon block was not found; source layout changed")
+
+# --- hunk 4: hold a whole vendor Icon= path in the desktop record ----------
+# The desktop surface keeps the Icon= of a ~/Desktop record in a fixed field
+# and passes it to theme_find() verbatim.  Every collected vendor DEB (Seewo,
+# DingTalk, ...) declares Icon=/opt/apps/<id>/entries/icons/hicolor/<size>/
+# apps/<id>.png, i.e. ~80 characters, so the value is snprintf-truncated into
+# an unopenable path, theme_find() returns NULL and the launcher renders as a
+# blank generic glyph.  The Start menu record has room for 128 bytes and never
+# suffered from this, which is why only the desktop icons looked broken.
+old_icon_field = 'typedef struct { int x, y; char label[64]; char path[512]; int is_dir; char icon[64]; } Icon;'
+new_icon_field = 'typedef struct { int x, y; char label[64]; char path[512]; int is_dir; char icon[256]; } Icon;'
+if new_icon_field in text:
+    pass
+elif old_icon_field in text:
+    text = text.replace(old_icon_field, new_icon_field, 1)
+    applied.append("desktop icon field widened")
+else:
+    raise SystemExit("ElevenDE desktop Icon record was not found; source layout changed")
 
 path.write_text(text)
 print(f"patched {path}" + (f" ({', '.join(applied)})" if applied else " (upstream already provides launchers/labels)"))

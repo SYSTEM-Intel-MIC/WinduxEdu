@@ -57,7 +57,7 @@ WinduxEdu 不把所有上游项目做成长期完整 fork，也不让 `live-buil
 
 - **固件全覆盖**：Intel/AMD/Realtek/Atheros/Broadcom 无线、Intel SOF/HDA 音频、AMD/Intel 显卡、服务器网卡固件与双平台 CPU 微码，全部预装（Bookworm `non-free-firmware`）；
 - **音频**：PipeWire（`pipewire` / `pipewire-pulse` / `wireplumber`）；
-- **输入**：libinput 统一触摸屏/触摸板/键盘，含 `xinput-calibrator`；
+- **输入**：libinput 统一触摸屏/触摸板/键盘，含 `xinput-calibrator`；触摸屏另配三层救助（udev 按设备名补 `ID_INPUT_TOUCHSCREEN` 标签、99- 序号 InputClass 保证 `Ignore "false"` 是最终判定、热插拔开关防厂商 `xorg.conf` 关闭），并由 `winduxedu-touch-fix` 在零设备首帧写入取证日志；
 - **打印扫描**：CUPS + `printer-driver-all` + OpenPrinting PPD + HPLIP + SANE；
 - **摄像头与指纹**：UVC 工具链、`fprintd` 框架；
 - **显卡**：Intel/AMD 开源栈开箱即用；NVIDIA 默认 nouveau，闭源/CUDA 按文档切换；

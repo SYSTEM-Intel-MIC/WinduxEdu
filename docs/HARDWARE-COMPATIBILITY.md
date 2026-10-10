@@ -21,7 +21,7 @@
 | 无线网卡 | `firmware-iwlwifi` `firmware-realtek` `firmware-atheros` `firmware-brcm80211` | 覆盖 Intel AX/AC、Realtek RTL88xx、Atheros、Broadcom brcmfmac |
 | 蓝牙 | `bluez` `bluez-tools` `libspa-0.2-bluetooth` | PipeWire 蓝牙音频模块已包含 |
 | 音频 | `firmware-sof-signed`（Intel SOF，防无声）+ `firmware-intel-sound` + `firmware-cirrus`（见 §2）+ PipeWire 栈 | `pipewire` `pipewire-pulse` `wireplumber` `alsa-utils` |
-| 输入 | `xserver-xorg-input-libinput` + `xinput-calibrator` | 触摸屏/触摸板统一 libinput |
+| 输入 | `xserver-xorg-input-libinput` + `xinput` + `xinput-calibrator` + `libinput-tools` | 触摸屏/触摸板统一 libinput；触摸屏的"设备未被 X 认出"救助见 §6 |
 | 屏幕键盘 | **`onboard` + `onboard-data`** | 见 §4 |
 | 摄像头 | UVC 内核驱动 + `v4l-utils` `guvcview` `ffmpeg` | 绝大多数 USB 摄像头开箱即用 |
 | 打印扫描 | CUPS + `printer-driver-all` + OpenPrinting PPD + HPLIP + SANE | 覆盖 HP/Canon/Epson/Brother 等 |
@@ -99,7 +99,8 @@ sudo apt install -t bookworm-backports linux-image-amd64 linux-headers-amd64
 - **AIC8800 无线网卡（希沃等国产设备常用）**：无主线驱动，需 out-of-tree DKMS（[radxa-pkg/aic8800](https://github.com/radxa-pkg/aic8800)，PCIe/SDIO/USB 三接口）。属外部来源，**尚未集成**；后续按 `sources.lock.tsv` 审计后决定是否进入构建。
 - **指纹识别**：`fprintd` 已预装，但 Goodix 27c6:550a、Broadcom ControlVault 3、CS9711 等需社区驱动或 OEM 二进制，不保证可用；用 `lsusb` 对照 [libfprint 支持列表](https://libfprint.freedesktop.org/support/)。
 - **Brother / Epson 扫描仪**：需厂商官网 brscan / epsonscan2 包，不随镜像分发。
-- **多屏触摸校准**：`xinput map-to-output <device> <output>` 映射触摸到指定显示器；偏移时用 `xinput-calibrator`。
+- **多屏触摸校准**：`xinput map-to-output <device> <output>` 映射触摸到指定显示器；偏移时用 `xinput-calibrator`。会话内由 `winduxedu-touch-fix` 自动执行（每 10 秒幂等重放，用户校准值写入 `edu-settings.conf` 的 `touch-calibration=` 后优先）。
+- **触摸屏完全无响应**（键盘可用、指针不动）：触摸设备要过三道关——libudev 打上 `ID_INPUT_TOUCHSCREEN`、最后一个匹配的 InputClass 不写 `Ignore "true"`、X 绑定 libinput 驱动。镜像为此做了三层保障：`etc/udev/rules.d/99-winduxedu-touchscreen.rules`（按设备名补打触摸屏标签，排除触摸板）、`etc/X11/xorg.conf.d/99-winduxedu-touchscreen.conf`（99- 排序保证 `Ignore "false"` 是最终判定，含按设备名匹配的兜底类）、`etc/X11/xorg.conf.d/99-winduxedu-serverflags.conf`（保证热插拔开启）。仍无响应时，`/tmp/winduxedu-winduxedu-touch-fix.log` 会记录一次完整取证：`xinput --list`、`/proc/bus/input/devices`、`/dev/input` 节点、被独占打开的 event 节点（`fuser`）、libinput 设备表与 Xorg 输入相关日志，据此可区分"内核没建节点 / udev 没打标签 / X 丢弃 / 别的进程独占"四种情况。
 - **NVIDIA 首启向导**：检测 NVIDIA 显卡并提示切换闭源驱动的向导为规划项，当前未实现。
 
 ## 参考

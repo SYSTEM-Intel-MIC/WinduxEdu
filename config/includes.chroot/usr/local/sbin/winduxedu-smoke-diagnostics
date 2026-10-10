@@ -68,6 +68,31 @@ probe() {
         tail -n 45 /var/log/winduxedu-elevende-xorg.log 2>/dev/null \
             || echo 'no Xorg log is present'
 
+        # Without a device list a black frame cannot be told apart from a
+        # desktop whose touch node the X server never added -- the input path
+        # a field report of "touch is dead" would have to be judged from.
+        printf '%s\n' '-- input devices --'
+        xinput --list 2>&1 || echo 'xinput unavailable'
+        printf '%s\n' '-- kernel input devices --'
+        grep -E '^(I:|N: |H: |B: PROP|B: ABS)' /proc/bus/input/devices 2>/dev/null \
+            || echo 'no /proc/bus/input/devices'
+        printf '%s\n' '-- /dev/input --'
+        ls -l /dev/input 2>/dev/null || echo '/dev/input is missing'
+        # The single decisive field: a touch node without ID_INPUT is never
+        # added by X, and one with only ID_INPUT_MOUSE is refused by libinput.
+        printf '%s\n' '-- udev input tags --'
+        for node in /dev/input/event*; do
+            [ -e "$node" ] || continue
+            printf '%s: ' "$node"
+            udevadm info --query=property --name="$node" 2>/dev/null \
+                | sed -n 's/^\(ID_INPUT[A-Z_]*\)=.*/\1/p' | tr '\n' ' ' \
+                || true
+            printf ' (%s)\n' "$(udevadm info --query=name --name="$node" 2>/dev/null || echo unknown)"
+        done
+        printf '%s\n' '-- touchscreen helper log --'
+        tail -n 25 /tmp/winduxedu-winduxedu-touch-fix.log 2>/dev/null \
+            || echo 'winduxedu-touch-fix has not logged yet'
+
         printf '%s\n' '-- x window tree --'
         window_tree
 

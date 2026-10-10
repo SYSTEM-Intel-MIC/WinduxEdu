@@ -265,12 +265,14 @@ for path in \
     usr/local/libexec/winduxedu-edu-uninstall \
     usr/local/share/applications/winduxedu-touch-calibrate.desktop \
     usr/local/share/applications/peazip.desktop \
-    etc/X11/xorg.conf.d/60-winduxedu-touchscreen.conf \
+    etc/X11/xorg.conf.d/99-winduxedu-touchscreen.conf \
+    etc/X11/xorg.conf.d/99-winduxedu-serverflags.conf \
     etc/winduxedu/edu-settings.conf \
     etc/skel/.config/fcitx5/config \
     etc/skel/.config/fcitx5/profile \
     etc/skel/.config/onlyoffice/DesktopEditors.conf \
     etc/udev/rules.d/99-winduxedu-automount.rules \
+    etc/udev/rules.d/99-winduxedu-touchscreen.rules \
     usr/share/applications/com.seewo.easisidebar.desktop; do
     require_path "$path"
 done
@@ -522,6 +524,16 @@ grep -q 'RUN+="/usr/bin/udisksctl mount' "$FULL_ROOT/etc/udev/rules.d/99-winduxe
 }
 
 # (7) The requested desktop, on top of 此电脑 / 主目录 / Edge / 终端.
+# Mirror ElevenDE theme_find(): a bare Icon= only renders if the shell can open
+# it from its own namespace, /usr/share/pixmaps or a hicolor/theme directory,
+# and an absolute one only if the file is readable.  Anything else is the blank
+# generic glyph the field report described.
+icon_art_resolves() {
+    local name="${1//./\\.}"
+    grep -q -E \
+        "(^|/)(usr/local/share/elevende-shell/icons/(32x32|48x48|64x64|128x128|256x256|scalable)/(apps|places|devices|mimetypes)|usr/share/pixmaps|usr/share/icons/(hicolor|Adwaita|Papirus|Kali|gnome|Adwaita-Dark)/(16x16|22x22|24x24|32x32|48x48|64x64|96x96|128x128|256x256|512x512|scalable)/(apps|places|devices|mimetypes))/${name}\\.(png|svg)$" \
+        "$LIST"
+}
 for shortcut in 希沃白板 班级优化大师 视频展台 希沃管家 微信 QQ 钉钉 ONLYOFFICE; do
     shortcut_file="$FULL_ROOT/etc/skel/Desktop/$shortcut.desktop"
     [ -s "$shortcut_file" ] || {
@@ -544,7 +556,103 @@ for shortcut in 希沃白板 班级优化大师 视频展台 希沃管家 微信
         echo "desktop shortcut is hidden by Hidden: $shortcut" >&2
         exit 1
     }
+    # The icon is the half of the field report that a Name/Exec check cannot
+    # see.  theme_find() takes the value verbatim: an absolute path has to be
+    # openable, a bare name has to exist in the shell's own icon namespace,
+    # and anything else renders as a blank generic glyph on the teacher's
+    # desktop.  Vendor entries name /opt/apps/... paths, which is exactly why
+    # hook 1550 publishes the art and rewrites the record to a short name.
+    shortcut_icon="$(sed -n 's/^Icon=//p' "$shortcut_file" | head -n 1)"
+    [ -n "$shortcut_icon" ] || {
+        echo "desktop shortcut has no Icon=: $shortcut" >&2
+        exit 1
+    }
+    case "$shortcut_icon" in
+    /*)
+        [ -r "$FULL_ROOT$shortcut_icon" ] || {
+            echo "desktop shortcut $shortcut points at an unreadable Icon= ($shortcut_icon)" >&2
+            exit 1
+        }
+        ;;
+    *)
+        icon_art_resolves "$shortcut_icon" || {
+            echo "desktop shortcut $shortcut has no art for Icon= ($shortcut_icon) anywhere the shell looks" >&2
+            exit 1
+        }
+        ;;
+    esac
 done
+
+# Touchscreen stack.  A panel reaches X through three gates -- libudev has to
+# tag the node, an InputClass has to leave it enabled (the last matching one
+# decides "Ignore"), and the libinput driver has to be the one bound.  Each is
+# a separate way for the keyboard to keep working while touch is dead, so each
+# is checked on the finished image rather than on the configuration that was
+# supposed to produce it.
+for input_pkg in xserver-xorg-core xserver-xorg-input-libinput xinput \
+    xinput-calibrator libinput-tools; do
+    grep -qx "Package: $input_pkg" "$FULL_ROOT/var/lib/dpkg/status" || {
+        echo "$input_pkg is not installed" >&2
+        exit 1
+    }
+done
+TOUCH_CLASS="$WORK/winduxedu-touchscreen.conf"
+cat_image_file 'etc/X11/xorg.conf.d/99-winduxedu-touchscreen.conf' "$TOUCH_CLASS"
+grep -q 'MatchIsTouchscreen "on"' "$TOUCH_CLASS" || {
+    echo 'the touchscreen InputClass does not match touchscreens' >&2
+    exit 1
+}
+grep -q 'MatchProduct "touch" "Touch" "TOUCH"' "$TOUCH_CLASS" || {
+    echo 'the touchscreen InputClass has no case-complete name-keyed rescue section' >&2
+    exit 1
+}
+grep -q 'Driver "libinput"' "$TOUCH_CLASS" || {
+    echo 'the touchscreen InputClass does not bind libinput' >&2
+    exit 1
+}
+! grep -qiE 'Option[[:space:]]+"Ignore"[[:space:]]+"(true|on|yes|1)"' "$TOUCH_CLASS" || {
+    echo 'the touchscreen InputClass disables the devices it matches' >&2
+    exit 1
+}
+TOUCH_RULE="$WORK/winduxedu-touchscreen.rules"
+cat_image_file 'etc/udev/rules.d/99-winduxedu-touchscreen.rules' "$TOUCH_RULE"
+grep -q 'ENV{ID_INPUT_TOUCHSCREEN}="1"' "$TOUCH_RULE" || {
+    echo 'the touchscreen udev rule does not tag the device as a touchscreen' >&2
+    exit 1
+}
+# A node libudev never tagged with ID_INPUT at all is invisible to the X
+# server's udev backend: no InputClass can reach a device X did not add.
+grep -q 'ENV{ID_INPUT}="1"' "$TOUCH_RULE" || {
+    echo 'the touchscreen udev rule does not set ID_INPUT' >&2
+    exit 1
+}
+# A touchpad must never be re-tagged: the rule is only a rescue for panels,
+# and a laptop's touchpad keeps working through its own libudev tag.
+grep -q 'ENV{ID_INPUT_TOUCHPAD}!="1"' "$TOUCH_RULE" || {
+    echo 'the touchscreen udev rule does not exclude touchpads' >&2
+    exit 1
+}
+# "Option Ignore" is decided by the last matching InputClass, so a snippet
+# that disables the touch node wins purely by sorting after ours.
+for xconf in "$FULL_ROOT"/etc/X11/xorg.conf.d/*.conf; do
+    [ -f "$xconf" ] || continue
+    case "$(basename "$xconf")" in
+    99-winduxedu-*) continue ;;
+    esac
+    grep -qiE 'Option[[:space:]]+"Ignore"[[:space:]]+"(true|on|yes|1)"' "$xconf" || continue
+    if [ "$(basename "$xconf")" \> "99-winduxedu-touchscreen.conf" ]; then
+        echo "$xconf disables input devices and sorts after the WinduxEdu touchscreen class" >&2
+        exit 1
+    fi
+done
+# The main config file is parsed after every conf.d directory, so a vendor
+# /etc/X11/xorg.conf that switches hotplug off cannot be overridden there.
+if [ -f "$FULL_ROOT/etc/X11/xorg.conf" ] && \
+        grep -qiE '^[[:space:]]*Option[[:space:]]+"Auto(Add|Enable)Devices"[[:space:]]+"(false|off|no|0)"' \
+        "$FULL_ROOT/etc/X11/xorg.conf"; then
+    echo '/etc/X11/xorg.conf disables hotplug; the touch node would never be added' >&2
+    exit 1
+fi
 
 # (8) The screen keyboard is onboard now; the retired matchbox-keyboard must
 # be neither installed nor referenced by the supervisor.
