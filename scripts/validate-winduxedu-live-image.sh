@@ -633,7 +633,12 @@ grep -q 'MatchIsTouchscreen "on"' "$TOUCH_CLASS" || {
     echo 'the touchscreen InputClass does not match touchscreens' >&2
     exit 1
 }
-grep -q 'MatchProduct "touch" "Touch" "TOUCH"' "$TOUCH_CLASS" || {
+# MatchProduct takes exactly one string token and ORs its "|"-separated
+# alternatives, so the three spellings share a single token.  Three
+# space-separated strings are an invalid keyword, that parse error aborts the
+# entire config file, and the server then starts no screen at all: a black
+# frame with nothing in the log but "no screens found".
+grep -q 'MatchProduct "touch|Touch|TOUCH"' "$TOUCH_CLASS" || {
     echo 'the touchscreen InputClass has no case-complete name-keyed rescue section' >&2
     exit 1
 }
@@ -645,6 +650,18 @@ grep -q 'Driver "libinput"' "$TOUCH_CLASS" || {
     echo 'the touchscreen InputClass disables the devices it matches' >&2
     exit 1
 }
+# The same mistake in ANY conf.d snippet is fatal: xf86parseError() returns
+# NULL, HANDLE_LIST tears the whole config down, InitOutput returns before a
+# screen exists, and dix FatalErrors with "no screens found".  The VM then
+# only shows a black frame, so catch every Match keyword handed more than one
+# string token here, where the job still fails with a file and a line.
+bad_match="$(grep -RnE '^[[:space:]]*(No)?Match[A-Za-z]+[[:space:]]+"[^"]*"[[:space:]]+([^#[:space:]])' \
+    "$FULL_ROOT"/etc/X11/xorg.conf.d/*.conf 2>/dev/null || true)"
+if [ -n "$bad_match" ]; then
+    echo 'an xorg.conf.d Match entry passes more than one string (use one string, "|" separated):' >&2
+    echo "$bad_match" >&2
+    exit 1
+fi
 TOUCH_RULE="$WORK/winduxedu-touchscreen.rules"
 cat_image_file 'etc/udev/rules.d/99-winduxedu-touchscreen.rules' "$TOUCH_RULE"
 grep -q 'ENV{ID_INPUT_TOUCHSCREEN}="1"' "$TOUCH_RULE" || {
