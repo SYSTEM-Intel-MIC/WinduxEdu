@@ -16,6 +16,10 @@
 # be missing and the node to be neither touchpad, tablet, pointing stick nor
 # keyboard -- devices already tagged correctly are never rewritten.
 #
+# Clear the mouse classification as well as setting the touchscreen tag:
+# libinput expects one input-device type, and ID_INPUT_MOUSE=1 can otherwise
+# conflict with ID_INPUT_TOUCHSCREEN=1 on the same event node.
+#
 # The X side of the same rescue is
 # /etc/X11/xorg.conf.d/99-winduxedu-touchscreen.conf, which keys on the same
 # names when libudev's tag is missing.
@@ -23,14 +27,14 @@ KERNEL=="event*", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}!="1", \
     ENV{ID_INPUT_TOUCHPAD}!="1", ENV{ID_INPUT_TABLET}!="1", \
     ENV{ID_INPUT_POINTINGSTICK}!="1", ENV{ID_INPUT_KEYBOARD}!="1", \
     ATTRS{name}=="*[Tt][Oo][Uu][Cc][Hh]*[Ss][Cc][Rr][Ee][Ee][Nn]*", \
-    ENV{ID_INPUT}="1", ENV{ID_INPUT_TOUCHSCREEN}="1"
+    ENV{ID_INPUT}="1", ENV{ID_INPUT_MOUSE}="", ENV{ID_INPUT_TOUCHSCREEN}="1"
 KERNEL=="event*", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}!="1", \
     ENV{ID_INPUT_TOUCHPAD}!="1", ENV{ID_INPUT_TABLET}!="1", \
     ENV{ID_INPUT_POINTINGSTICK}!="1", ENV{ID_INPUT_KEYBOARD}!="1", \
     ATTRS{name}=="*[Tt][Oo][Uu][Cc][Hh]*[Pp][Aa][Nn][Ee][Ll]*", \
-    ENV{ID_INPUT}="1", ENV{ID_INPUT_TOUCHSCREEN}="1"
+    ENV{ID_INPUT}="1", ENV{ID_INPUT_MOUSE}="", ENV{ID_INPUT_TOUCHSCREEN}="1"
 KERNEL=="event*", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}!="1", \
     ENV{ID_INPUT_TOUCHPAD}!="1", ENV{ID_INPUT_TABLET}!="1", \
     ENV{ID_INPUT_POINTINGSTICK}!="1", ENV{ID_INPUT_KEYBOARD}!="1", \
     ATTRS{name}=="*[Mm][Uu][Ll][Tt][Ii]*[Tt][Oo][Uu][Cc][Hh]*", \
-    ENV{ID_INPUT}="1", ENV{ID_INPUT_TOUCHSCREEN}="1"
+    ENV{ID_INPUT}="1", ENV{ID_INPUT_MOUSE}="", ENV{ID_INPUT_TOUCHSCREEN}="1"
