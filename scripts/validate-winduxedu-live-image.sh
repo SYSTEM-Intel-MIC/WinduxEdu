@@ -614,6 +614,105 @@ for shortcut in 希沃白板 班级优化大师 视频展台 希沃管家 微信
     esac
 done
 
+# (7b) 希沃白板 must not be able to upgrade itself.  The vendor components are
+# already disarmed (updater autostart, updater units, Electron's feed), but
+# EasiNote5 also carries its own HTTP check against ota-gateway.seewo.com that
+# answers {"hasUpdate":true} the day the vendor ships a build nobody reviewed.
+# Only neutralising the host closes that path, and it has to happen at BOOT:
+# live-build owns /etc/hosts (lb_chroot_hosts bind-mounts the builder's copy
+# into the chroot and lb_binary reinstalls that copy over the finished tree), so
+# run 38923665983 proved a chroot hook's line is already gone from the image by
+# the time the ISO is verified.  Assert the boot-time machinery, never the file
+# it produces.
+require_path 'usr/local/bin/winduxedu-seewo-ota-block'
+require_path 'etc/systemd/system/winduxedu-seewo-ota-block.service'
+require_path \
+    'etc/systemd/system/multi-user.target.wants/winduxedu-seewo-ota-block.service'
+# Enabled, not merely present: a unit that is not enabled never runs, and the
+# endpoint then stays reachable in exactly the sessions the report covered.
+[ -L "$FULL_ROOT/etc/systemd/system/multi-user.target.wants/winduxedu-seewo-ota-block.service" ] || {
+    echo 'the Seewo OTA block unit exists but is not enabled' >&2
+    exit 1
+}
+OTA_HELPER="$WORK/winduxedu-seewo-ota-block"
+cat_image_file 'usr/local/bin/winduxedu-seewo-ota-block' "$OTA_HELPER"
+grep -q 'ota-gateway\.seewo\.com' "$OTA_HELPER" || {
+    echo 'the Seewo OTA block helper does not name the OTA endpoint' >&2
+    exit 1
+}
+# ...and only that endpoint: enweb3.seewo.com carries login and course content,
+# so blocking it too would trade a fixable update risk for a dead application.
+# Comments may say so; no live line may name it.
+! grep -vE '^[[:space:]]*#' "$OTA_HELPER" | grep -q 'enweb3' || {
+    echo 'the Seewo OTA block helper also touches enweb3.seewo.com' >&2
+    exit 1
+}
+OTA_UNIT="$WORK/winduxedu-seewo-ota-block.service"
+cat_image_file 'etc/systemd/system/winduxedu-seewo-ota-block.service' "$OTA_UNIT"
+grep -q '^ExecStart=/usr/local/bin/winduxedu-seewo-ota-block$' "$OTA_UNIT" || {
+    echo 'the Seewo OTA block unit does not run the helper' >&2
+    exit 1
+}
+
+# (7c) The Seewo toolbar pinning helper has to work from the STACKING ORDER.
+# Re-arming _NET_WM_STATE_ABOVE cannot detect the failure: 希沃白板 gives its
+# *main* window the very same state, so both windows read back as "above" and
+# the only thing left to compare is their position in _NET_CLIENT_LIST_STACKING.
+# The original helper exited at `already_above "$id" && continue`, which -- as a
+# simulation against the monitoring report's real window ids shows -- issued
+# zero calls while the whiteboard covered the toolbar.
+TOOLBAR_HELPER="$WORK/winduxedu-seewo-toolbar"
+cat_image_file 'usr/local/bin/winduxedu-seewo-toolbar' "$TOOLBAR_HELPER"
+grep -q '_NET_CLIENT_LIST_STACKING' "$TOOLBAR_HELPER" || {
+    echo 'the Seewo toolbar helper does not read the stacking order' >&2
+    exit 1
+}
+grep -q 'windowraise' "$TOOLBAR_HELPER" || {
+    echo 'the Seewo toolbar helper cannot re-raise a covered toolbar' >&2
+    exit 1
+}
+! grep -q 'already_above "$id" && continue' "$TOOLBAR_HELPER" || {
+    echo 'the Seewo toolbar helper still skips a toolbar that already declares ABOVE' >&2
+    exit 1
+}
+
+# (7d) StartupWMClass= must name the program that RUNS, not the launcher the
+# menu points at.  ElevenDE compares it against the window's WM_CLASS, so a
+# value ending in .sh (or naming our own wrapper) matches nothing and the task
+# button falls back to a generic glyph.  Read it out of [Desktop Entry] -- the
+# same group ElevenDE parses.
+for wm_entry in com.seewo.easinote5 com.seewo.easicare com.seewo.easicamera \
+    com.seewo.terminalmanager; do
+    wm_file=""
+    for wm_dir in usr/share/applications usr/local/share/applications; do
+        [ -n "$wm_file" ] && break
+        wm_try="$WORK/$wm_entry.desktop"
+        # cat_image_file truncates and then fails, so an empty result means
+        # this directory simply does not carry the entry -- try the next one.
+        if cat_image_file "$wm_dir/$wm_entry.desktop" "$wm_try" 2>/dev/null &&
+            [ -s "$wm_try" ]; then
+            wm_file="$wm_try"
+        fi
+    done
+    [ -n "$wm_file" ] || {
+        echo "$wm_entry.desktop is missing from the image" >&2
+        exit 1
+    }
+    wm_cls="$(awk '
+        /^\[/ { h = $0; sub(/\r$/, "", h); in_de = (h == "[Desktop Entry]"); next }
+        in_de && /^StartupWMClass=/ { sub(/^StartupWMClass=/, ""); print; exit }' "$wm_file")"
+    [ -n "$wm_cls" ] || {
+        echo "$wm_entry has no StartupWMClass= in [Desktop Entry]" >&2
+        exit 1
+    }
+    case "$wm_cls" in
+    *.sh | winduxedu-*)
+        echo "$wm_entry names a launcher as StartupWMClass=$wm_cls" >&2
+        exit 1
+        ;;
+    esac
+done
+
 # Touchscreen stack.  A panel reaches X through three gates -- libudev has to
 # tag the node, an InputClass has to leave it enabled (the last matching one
 # decides "Ignore"), and the libinput driver has to be the one bound.  Each is
@@ -789,6 +888,28 @@ grep -q 'pipewire-pulse' "$AUDIO_HELPER"
 TIDY_HELPER="$WORK/winduxedu-desktop-tidy"
 cat_image_file 'usr/local/bin/winduxedu-desktop-tidy' "$TIDY_HELPER"
 grep -q 'repair_dir' "$TIDY_HELPER"
+# A record can be complete and still draw nothing: an Icon= the shell cannot
+# open -- no value at all, a path to a file that is not there, or a bare name
+# with no art in any namespace theme_find() searches -- renders as the generic
+# glyph the field report described as "有条目但图标空白/通用图".  (Truncation of
+# the ~78-character vendor path is already covered: the build widens the
+# desktop record's icon field to 256 bytes.)  The repair has to exist and has
+# to know what the shell can resolve.
+grep -qF 'fix_icon' "$TIDY_HELPER" || {
+    echo 'desktop-tidy does not repair an unrenderable Icon=' >&2
+    exit 1
+}
+grep -qF 'icon_renders' "$TIDY_HELPER" || {
+    echo 'desktop-tidy has no model of what the shell can open' >&2
+    exit 1
+}
+# ElevenDE reads $HOME/Desktop directly while xdg-user-dir DESKTOP answers
+# ~/桌面 in a zh_CN session, so repairing only the latter leaves the records
+# the shell actually draws from untouched.
+grep -qF 'repair_dir "$HOME/Desktop"' "$TIDY_HELPER" || {
+    echo 'desktop-tidy no longer sweeps $HOME/Desktop' >&2
+    exit 1
+}
 
 # (5) The education switches must be observable, and every source the applier
 # restores from must exist: otherwise the page reverts itself two seconds later

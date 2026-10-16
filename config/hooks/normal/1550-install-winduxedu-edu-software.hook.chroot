@@ -320,34 +320,47 @@ fi
 # buttons had no stable icon source and showed up blank or generic.  Derive
 # the value from the entry's own Exec line; entries that already declare one
 # are left untouched.
-add_wmclass_from_exec() {
-    entry="$1"
-    grep -q '^StartupWMClass=' "$entry" && return 0
-    exec_line="$(sed -n 's/^Exec=//p' "$entry" | head -n1)"
-    [ -n "$exec_line" ] || return 0
-    wm_class=""
-    for token in $exec_line; do
-        token="$(printf '%s' "$token" | tr -d '"')"
-        case "$token" in
-            /*) candidate="$(basename "$token")" ;;
-            -*) continue ;;
-            *) candidate="$token" ;;
-        esac
-        case "$candidate" in
-            sh | bash | dash | env | sudo | nohup | script | env.*) continue ;;
-        esac
-        wm_class="$candidate"
-        break
-    done
-    [ -n "$wm_class" ] || return 0
-    printf 'StartupWMClass=%s\n' "$wm_class" >>"$entry"
+#
+# The Exec line names a LAUNCHER, not the program: 希沃白板 ends up pointing at
+# the vendor .sh or at our own wrapper, and 班级优化大师 / 视频展台 still point at
+# the vendor .sh.  None of those names is ever a WM_CLASS -- the window manager
+# only ever sees what the launcher execs -- so follow it down to the real
+# program first.  The pass that calls this runs AFTER the Exec rewrites below:
+# deriving from the original Exec pinned the class to the script name, and
+# desktop_icon_for_class() then matched neither the class nor the desktop id.
+is_interpreter() {
+    case "$1" in
+    sh | bash | dash | env | sudo | nohup | script | env.*) return 0 ;;
+    python | python[23] | node | perl | ruby | java) return 0 ;;
+    *) return 1 ;;
+    esac
 }
-for desktop in /opt/apps/*/entries/applications/*.desktop; do
-    [ -s "$desktop" ] || continue
-    target="/usr/share/applications/$(basename "$desktop")"
-    [ -s "$target" ] || continue
-    add_wmclass_from_exec "$target"
-done
+
+# Print the program a launcher ultimately execs, following at most four hops
+# and only through wrappers we recognise (a vendor .sh or a WinduxEdu one).
+# Anything else -- including an interpreter the script execs -- stops the walk
+# and the caller keeps the launcher's own name: that too is a guess, but it at
+# least belongs to this application rather than to python3.
+unwrapped_exec() {
+    ue_cur="$1"
+    ue_n=0
+    while [ "$ue_n" -lt 4 ] && [ -r "$ue_cur" ]; do
+        ue_n=$((ue_n + 1))
+        case "$ue_cur" in
+        *.sh | */winduxedu-*) ;;
+        *) break ;;
+        esac
+        ue_real="$(sed -n 's/^[[:space:]]*exec[[:space:]]\{1,\}"\{0,1\}\([^"[:space:]]\{1,\}\).*/\1/p' \
+            "$ue_cur" 2>/dev/null | head -n1)"
+        [ -n "$ue_real" ] || break
+        ue_cur="$ue_real"
+    done
+    printf '%s' "$ue_cur"
+}
+
+# NOTE: the pass that calls this runs *below*, after every Exec= rewrite.
+# Deriving the class from the vendor's original Exec (…/com.seewo.easinote5.sh)
+# would pin StartupWMClass to a shell script the window manager never sees.
 
 if [ ! -s /usr/share/applications/com.seewo.terminalmanager.desktop ]; then
     echo "Seewo Terminal Manager menu entry is missing or empty" >&2
@@ -733,6 +746,18 @@ WRAP
     fi
 fi
 
+# Every Exec= now points at the program that actually runs, so this is the
+# first moment the taskbar class can be derived correctly.  Deriving it from
+# the vendor's original Exec pinned StartupWMClass= to …/com.seewo.easinote5.sh,
+# a shell script the window manager never reports, so desktop_icon_for_class()
+# matched neither the class nor the desktop id and the task button had no icon.
+# StartupWMClass= is NOT derived here.  A later step puts vendor entries back
+# with Seewo's own wrong value (StartupWMClass=com.seewo.easicare.sh, i.e. the
+# launcher), so run 38933638492 saw this pass log "-> easicare" and the verifier
+# then read com.seewo.easicare.sh out of the finished ISO.  The derivation lives
+# in 1960-winduxedu-wmclass.hook.chroot, the last hook, where nothing can
+# overwrite it.
+
 # --- 希沃 upgrade components (task: block vendor self-updates) ------------
 # An in-place upgrade would replace a reviewed, pinned build (see the version
 # rule in edu-software/README.md), so no vendor update path may stay armed.
@@ -770,6 +795,38 @@ for tree in /opt/apps/com.seewo.* /opt/EasiNote5; do
         \( -iname 'app-update.yml' -o -iname 'latest.yml' -o -iname 'update-info.json' \) \
         -exec sh -c 'mv -f "$1" "$1.disabled" 2>/dev/null || true' _ {} \; 2>/dev/null || true
 done
+
+# The three disarmings above do not stop 希沃白板 from *asking*: EasiNote5
+# carries its own HTTP check, independent of electron-updater's feed, against
+#   https://ota-gateway.seewo.com/api/v1/update
+# (captured in the field monitoring report).  A live endpoint answers
+# {"hasUpdate":true} the day the vendor ships a build the image was not
+# reviewed against, so neutralise the host itself: 127.0.0.1 refuses the
+# connection immediately and the check gives up without delaying startup.
+# Only the OTA gateway is dropped -- enweb3.seewo.com carries login and course
+# content and must keep working.
+#
+# It cannot be armed from here.  live-build owns /etc/hosts: lb_chroot_hosts
+# bind-mounts the build host's copy into the chroot, and lb_binary reinstalls
+# that same copy over the finished tree, so a line appended by any chroot hook
+# -- or shipped through config/includes.chroot -- is gone from the image before
+# the ISO is even written.  Run 38923665983 proved exactly that: the hook logged
+# a successful write and the validator then found nothing in the ISO.  The block
+# is therefore armed at boot, on the Live session and on installed systems alike,
+# and enabled here with an explicit .wants symlink for the same reason the
+# display service is: live-build does not preserve preset state in the chroot,
+# and a flattened regular file at a .wants path silently defeats the enablement.
+for f in /usr/local/bin/winduxedu-seewo-ota-block \
+    /etc/systemd/system/winduxedu-seewo-ota-block.service; do
+    [ -s "$f" ] || {
+        echo "missing $f -- the Seewo OTA endpoint would stay reachable" >&2
+        exit 1
+    }
+done
+install -d -m 0755 /etc/systemd/system/multi-user.target.wants
+rm -f /etc/systemd/system/multi-user.target.wants/winduxedu-seewo-ota-block.service
+ln -sfn ../winduxedu-seewo-ota-block.service \
+    /etc/systemd/system/multi-user.target.wants/winduxedu-seewo-ota-block.service
 
 # --- ONLYOFFICE (task: default PDF reader) -------------------------------
 # Register ONLYOFFICE as the system-wide handler for application/pdf.  The

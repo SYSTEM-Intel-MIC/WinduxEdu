@@ -1,0 +1,102 @@
+#!/bin/sh
+set -eu
+
+# The very last hook that touches a .desktop: nothing rewrites one after this.
+#
+# ElevenDE pairs a taskbar button with its window by StartupWMClass= (case-
+# insensitive) or the desktop file's own id, and only then falls back to the
+# window's transient _NET_WM_ICON.  A vendor launcher such as
+# com.seewo.easinote5.sh merely execs the real program, which is what the window
+# manager reports as WM_CLASS, so a class naming the launcher matches nothing
+# and the task button keeps its generic glyph -- the field defect reported as
+# "有条目但图标空白/通用图" on the taskbar.
+#
+# Two properties matter, and both were learned the hard way:
+#
+#   ORDER.  Deriving the class alongside the Exec= rewrites in hook 1550 left a
+#   later step free to put a vendor entry back carrying Seewo's own wrong value,
+#   StartupWMClass=com.seewo.easicare.sh -- the launcher, not the program.  Run
+#   38933638492 shows exactly that split: the earlier pass logged "-> easicare"
+#   while the verifier then read com.seewo.easicare.sh out of the finished ISO.
+#   Deriving it here makes this pass the only writer that matters.
+#
+#   EVIDENCE.  Every Seewo entry is logged with its final Exec= and
+#   StartupWMClass=, so a build log settles what shipped without another ISO
+#   round trip.
+
+is_interpreter() {
+    case "$1" in
+    sh | bash | dash | env | sudo | nohup | script | env.*) return 0 ;;
+    python | python[23] | node | perl | ruby | java) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
+# Print the program a launcher ultimately execs, following at most four hops
+# and only through wrappers we recognise (a vendor .sh or a WinduxEdu one).
+# Anything else -- including an interpreter the script execs -- stops the walk
+# and the caller keeps the launcher's own name: that too is a guess, but it at
+# least belongs to this application rather than to python3.
+unwrapped_exec() {
+    ue_cur="$1"
+    ue_n=0
+    while [ "$ue_n" -lt 4 ] && [ -r "$ue_cur" ]; do
+        ue_n=$((ue_n + 1))
+        case "$ue_cur" in
+        *.sh | */winduxedu-*) ;;
+        *) break ;;
+        esac
+        ue_real="$(sed -n 's/^[[:space:]]*exec[[:space:]]\{1,\}"\{0,1\}\([^"[:space:]]\{1,\}\).*/\1/p' \
+            "$ue_cur" 2>/dev/null | head -n1)"
+        [ -n "$ue_real" ] || break
+        ue_cur="$ue_real"
+    done
+    printf '%s' "$ue_cur"
+}
+
+add_wmclass_from_exec() {
+    local entry="$1"
+    local de_exec="" wm_class=""
+
+    de_exec="$(sed -n 's/^Exec=//p' "$entry" 2>/dev/null | head -n1)"
+    de_exec="${de_exec%% *}"
+    de_exec="${de_exec%\"}"
+    de_exec="${de_exec#\"}"
+    [ -n "$de_exec" ] || return 0
+
+    wm_class="$(basename "$(unwrapped_exec "$de_exec")")"
+    case "$wm_class" in
+    *.sh) wm_class="${wm_class%.sh}" ;;
+    esac
+    [ -n "$wm_class" ] || wm_class="$(basename "$entry" .desktop)"
+
+    if grep -q '^StartupWMClass=' "$entry"; then
+        sed -i "s|^StartupWMClass=.*|StartupWMClass=$wm_class|" "$entry"
+    else
+        printf 'StartupWMClass=%s\n' "$wm_class" >>"$entry"
+    fi
+
+    echo "wmclass $entry: Exec=$de_exec -> StartupWMClass=$wm_class"
+    return 0
+}
+
+for desktop in /opt/apps/*/entries/applications/*.desktop; do
+    [ -s "$desktop" ] || continue
+    wm_name="$(basename "$desktop")"
+    for dir in /usr/share/applications /usr/local/share/applications; do
+        [ -s "$dir/$wm_name" ] || continue
+        add_wmclass_from_exec "$dir/$wm_name"
+    done
+done
+
+# Evidence of what actually ships, read back after every write above.
+for dir in /usr/share/applications /usr/local/share/applications; do
+    for wm_e in com.seewo.easinote5 com.seewo.easicare com.seewo.easicamera \
+        com.seewo.terminalmanager; do
+        wm_f="$dir/$wm_e.desktop"
+        [ -s "$wm_f" ] || continue
+        printf 'wmclass-final %s: Exec=%s StartupWMClass=%s\n' "$wm_f" \
+            "$(sed -n 's/^Exec=//p' "$wm_f" | head -n1)" \
+            "$(sed -n 's/^StartupWMClass=//p' "$wm_f" | head -n1)"
+    done
+done

@@ -7,6 +7,11 @@
 # such a record can appear, restore it from the packaged entry when the id is
 # still known, and drop it when nothing usable is left.
 #
+# A record can also be complete and still draw nothing: an Icon= the shell
+# cannot open -- no value at all, a path to a file that is not there, or a
+# bare name with no art in any namespace the shell searches -- falls back to
+# the generic glyph.  Those get a value the shell really resolves.
+#
 # Runs in the foreground on purpose: the session script tracks its helpers by
 # pid file, so a helper must never fork itself away.
 set -u
@@ -53,17 +58,126 @@ repair_dir() {
             sed -i -e '/^NoDisplay=/d' -e '/^Hidden=/d' "$entry"
             log "unhid $entry"
         fi
+        fix_icon "$entry" "$id"
     done
 }
 
-DESKTOP_DIR="$HOME/Desktop"
-if command -v xdg-user-dir >/dev/null 2>&1; then
-    user_desktop="$(xdg-user-dir DESKTOP 2>/dev/null)"
-    [ -n "$user_desktop" ] && DESKTOP_DIR="$user_desktop"
-fi
+# Mirror ElevenDE theme_find(): decide whether an Icon= value can really be
+# opened where the shell looks.  A value that fails here renders as the blank
+# generic glyph, which is the field report's "有条目但图标空白/通用图".
+icon_renders() {
+    ic_name="$1"
+    [ -n "$ic_name" ] || return 1
+    case "$ic_name" in
+    /*)
+        # A path is kept in the record's own field, so it only has to be short
+        # enough to fit and to point at something that exists.  The build widens
+        # that field to 256 bytes (scripts/patch-elevende-desktop-launcher.py),
+        # so the ~78-character vendor paths do survive -- what is left to catch
+        # is a value too long to fit or pointing at a file that is not there,
+        # since theme_find() only runs access() on an absolute name and then
+        # gives up with no fallback.
+        [ "${#ic_name}" -ge 256 ] && return 1
+        [ -r "$ic_name" ] || return 1
+        return 0
+        ;;
+    esac
+    for ic_sz in 32 48 64 128 256 512; do
+        for ic_ext in png svg; do
+            ic_try="/usr/local/share/elevende-shell/icons/${ic_sz}x${ic_sz}/apps/${ic_name}.${ic_ext}"
+            [ -r "$ic_try" ] && return 0
+        done
+    done
+    for ic_try in "/usr/local/share/elevende-shell/icons/scalable/apps/${ic_name}.png" \
+        "/usr/local/share/elevende-shell/icons/scalable/apps/${ic_name}.svg" \
+        "/usr/share/pixmaps/${ic_name}.png" \
+        "/usr/share/pixmaps/${ic_name}.svg"; do
+        [ -r "$ic_try" ] && return 0
+    done
+    for ic_theme in hicolor Adwaita Papirus Kali gnome Adwaita-Dark; do
+        for ic_sz in 16 22 24 32 48 64 96 128 256 512; do
+            for ic_ext in png svg; do
+                ic_try="/usr/share/icons/${ic_theme}/${ic_sz}x${ic_sz}/apps/${ic_name}.${ic_ext}"
+                [ -r "$ic_try" ] && return 0
+            done
+        done
+        for ic_ext in png svg; do
+            ic_try="/usr/share/icons/${ic_theme}/scalable/apps/${ic_name}.${ic_ext}"
+            [ -r "$ic_try" ] && return 0
+        done
+    done
+    return 1
+}
+
+# Icon= of the [Desktop Entry] group only.  An Action group carries its own
+# Icon= for that action's launcher; reading it as the application's icon (or
+# overwriting it) leaves the entry itself with nothing to draw.
+desktop_icon_of() {
+    awk '
+        /^\[/ { h = $0; sub(/\r$/, "", h); in_de = (h == "[Desktop Entry]"); next }
+        in_de && /^Icon=/ { sub(/^Icon=/, ""); sub(/\r$/, ""); print; exit }' "$1"
+}
+
+# Give an unrenderable Icon= something the shell can actually open: the value
+# the packaged entry carries, otherwise the art hook 1550 published under the
+# record's own id.  Never touches a value that already resolves.
+fix_icon() {
+    fi_entry="$1"
+    fi_id="$2"
+    fi_cur="$(desktop_icon_of "$fi_entry")"
+    icon_renders "$fi_cur" && return 0
+
+    fi_pick=""
+    for fi_src in "/usr/share/applications/$fi_id.desktop" \
+        "/usr/local/share/applications/$fi_id.desktop"; do
+        [ -s "$fi_src" ] || continue
+        fi_cand="$(desktop_icon_of "$fi_src")"
+        [ -n "$fi_cand" ] || continue
+        [ "$fi_cand" = "$fi_cur" ] && continue
+        icon_renders "$fi_cand" || continue
+        fi_pick="$fi_cand"
+        break
+    done
+    if [ -z "$fi_pick" ] && icon_renders "$fi_id"; then
+        fi_pick="$fi_id"
+    fi
+    if [ -z "$fi_pick" ]; then
+        log "no renderable art for Icon=${fi_cur:-<none>} in $fi_entry"
+        return 0
+    fi
+    if [ -n "$fi_cur" ]; then
+        # Replace the entry group's Icon= only; the Action groups keep theirs.
+        awk -v pick="$fi_pick" '
+            /^\[/ { h = $0; sub(/\r$/, "", h); in_de = (h == "[Desktop Entry]"); print; next }
+            in_de && !done && /^Icon=/ { print "Icon=" pick; done = 1; next }
+            { print }' "$fi_entry" >"$fi_entry.tmp"
+    else
+        # No Icon= at all: add it inside [Desktop Entry], not at the end of
+        # the file where it would land in an Action group.
+        awk -v pick="$fi_pick" '
+            { print }
+            /^\[Desktop Entry\]\r*$/ && !done { print "Icon=" pick; done = 1 }' \
+            "$fi_entry" >"$fi_entry.tmp"
+    fi
+    cp -f "$fi_entry.tmp" "$fi_entry" && rm -f "$fi_entry.tmp"
+    if [ "$(desktop_icon_of "$fi_entry")" = "$fi_pick" ]; then
+        log "repaired icon of $fi_entry: ${fi_cur:-<none>} -> $fi_pick"
+    else
+        log "failed to repair icon of $fi_entry"
+    fi
+}
 
 while :; do
-    repair_dir "$DESKTOP_DIR"
+    # Repair every directory the shell might be drawing from.  ElevenDE reads
+    # $HOME/Desktop directly while xdg-user-dir DESKTOP answers ~/桌面 in a
+    # zh_CN session, so fixing only one of them leaves the records the shell
+    # actually renders untouched.
+    repair_dir "$HOME/Desktop"
+    repair_dir "$HOME/桌面"
+    if command -v xdg-user-dir >/dev/null 2>&1; then
+        user_desktop="$(xdg-user-dir DESKTOP 2>/dev/null)"
+        [ -n "$user_desktop" ] && repair_dir "$user_desktop"
+    fi
     repair_dir "$HOME/.local/share/applications"
     sleep "$POLL"
 done

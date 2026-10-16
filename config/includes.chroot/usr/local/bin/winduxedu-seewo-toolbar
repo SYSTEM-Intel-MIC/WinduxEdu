@@ -5,17 +5,42 @@
 # On UOS the 希沃 floating toolbar stays above every window; under ElevenDE it
 # was subject to ordinary stacking, so maximised teaching windows covered it
 # and the "restore the UOS experience" affordance disappeared.  This helper
-# re-applies _NET_WM_STATE_ABOVE to Seewo's floating panels.
+# keeps that panel on top.
 #
 # Only floating panels are pinned: a pinned *main* window (the whiteboard
-# itself) would be wrong, so a window qualifies only when its type is
-# DOCK/UTILITY/TOOLBAR/SPLASH or it occupies a minority of the screen.
+# itself) would be wrong, so a window qualifies as a panel only when its type
+# is DOCK/UTILITY/TOOLBAR/SPLASH or it occupies a minority of the screen.
+#
+# Setting _NET_WM_STATE_ABOVE alone is NOT enough, and that is the whole
+# reason this helper does more than "wmctrl -b add,above": 希沃白板 gives its
+# *main* window the very same ABOVE state, and the window manager still stacks
+# whichever was raised last on top.  When the whiteboard enters annotation
+# mode it raises itself above the toolbar, so a click meant for the toolbar
+# lands on the whiteboard and is drawn as a pen stroke instead.  The window
+# manager reports both windows as "above", which is why a state test can never
+# see the problem: only the *relative* position in _NET_CLIENT_LIST_STACKING
+# can.  So every cycle compares the topmost Seewo panel with the topmost Seewo
+# main window and re-raises the panel when a main window has climbed over it
+# (field report 希沃白板窗口监测报告: "持续监测工具条和主窗口的堆叠顺序，如果
+# 主窗口在工具条之上，立即把工具条提升到最前").
 set -u
+
+# Session-lifetime state (set -u): the covering panel must survive across
+# cycles so the restack is only reported when it starts, and the stacking list
+# is rebuilt every cycle but must always be readable.
+covered_panel=""
+STACK_IDS=""
 
 log() { echo "seewo-toolbar: $*"; }
 
 command -v wmctrl >/dev/null 2>&1 || { log "wmctrl is missing"; exit 0; }
 command -v xrandr >/dev/null 2>&1 || { log "xrandr is missing"; exit 0; }
+
+# A bare wmctrl id (0x04000007) and the same id as xprop prints it
+# (0x4000007) are the same window, so every comparison happens in decimal.
+norm_id() {
+    printf '%d' "$1" 2>/dev/null || printf '%s' "-1"
+}
 
 is_seewo_window() {
     printf '%s' "$1" | grep -Eiq \
@@ -42,6 +67,30 @@ already_above() {
     xprop -id "$1" _NET_WM_STATE 2>/dev/null | grep -q '_NET_WM_STATE_ABOVE'
 }
 
+# Decimal stacking index of a window: 0 is the bottom, -1 means the window is
+# not in the list at all (unmapped windows drop out of it).
+stack_index() {
+    target="$(norm_id "$1")"
+    i=0
+    for sid in $STACK_IDS; do
+        [ "$sid" = "$target" ] && { printf '%s' "$i"; return 0; }
+        i=$((i + 1))
+    done
+    printf '%s' "-1"
+}
+
+# Put a window back on top without stealing the keyboard focus from the
+# whiteboard: xdotool's raise is a pure restack, while wmctrl -a activates.
+raise_panel() {
+    if command -v xdotool >/dev/null 2>&1; then
+        xdotool windowraise "$1" >/dev/null 2>&1 && return 0
+    fi
+    # Fallback: flipping the state off and on makes the window manager
+    # re-evaluate the stacking position instead of ignoring a no-op request.
+    wmctrl -i -r "$1" -b remove,above >/dev/null 2>&1 || true
+    wmctrl -i -r "$1" -b add,above >/dev/null 2>&1
+}
+
 pin_once() {
     sizes="$(screen_size)"
     set -- $sizes
@@ -49,38 +98,97 @@ pin_once() {
     max_w="$1"
     max_h="$2"
 
-    # wmctrl separates its columns with tabs (and -x appends WM_CLASS in front
-    # of the title); normalise to "id<TAB>width<TAB>height<TAB>class+title".
-    wmctrl -lG -x 2>/dev/null |
-        awk -v maxw="$max_w" -v maxh="$max_h" '
-            $1 ~ /^0x/ {
-                rest = ""
-                for (i = 7; i <= NF; i++) rest = rest " " $i
-                print $1 "\t" $5 "\t" $6 "\t" rest
-            }' |
-        while IFS='	' read -r id w h rest; do
-            [ -n "$id" ] || continue
-            is_seewo_window "$rest" || continue
-            floating=0
-            is_floating_type "$id" && floating=1
-            if [ "$floating" -eq 0 ]; then
-                case "$w$h" in
-                    *[!0-9]*) continue ;;
-                esac
-                [ "$max_w" -gt 0 ] && [ "$max_h" -gt 0 ] || continue
-                # Less than 60% of the screen in either direction = a panel.
-                [ "$((w * 100))" -lt "$((max_w * 60))" ] ||
-                    [ "$((h * 100))" -lt "$((max_h * 60))" ] || continue
+    STACK_IDS=""
+    for sid in $(xprop -root _NET_CLIENT_LIST_STACKING 2>/dev/null |
+        sed -n 's/.*window id #//p' | tr ',' ' '); do
+        STACK_IDS="$STACK_IDS $(norm_id "$sid")"
+    done
+
+    top_panel_id=""
+    top_panel_idx=-1
+    top_main_idx=-1
+
+    # wmctrl's column count varies with the flags and the version (the
+    # geometry is one "WxH+X+Y" token, not two fields), so locate it by shape
+    # instead of by position: everything before it is id + desktop, everything
+    # after it is the WM_CLASS/title that identifies the window.
+    wins="$(wmctrl -lG -x 2>/dev/null |
+        awk '$1 ~ /^0x/ {
+            geom = 0
+            for (i = 1; i <= NF; i++)
+                if ($i ~ /^[0-9]+x[0-9]+[+-]/) { geom = i; break }
+            w = -1
+            h = -1
+            if (geom && match($geom, /^[0-9]+x[0-9]+/)) {
+                g = substr($geom, 1, RLENGTH)
+                n = index(g, "x")
+                w = substr(g, 1, n - 1)
+                h = substr(g, n + 1)
+            }
+            rest = ""
+            first = geom ? geom + 1 : 2
+            for (i = first; i <= NF; i++) rest = rest " " $i
+            print $1 "\t" w "\t" h "\t" rest
+        }')"
+    [ -n "$wins" ] || return 0
+
+    while IFS='	' read -r id w h rest; do
+        [ -n "$id" ] || continue
+        is_seewo_window "$rest" || continue
+        is_panel=0
+        is_floating_type "$id" && is_panel=1
+        if [ "$is_panel" -eq 0 ]; then
+            case "$w$h" in
+            *[!0-9]*) continue ;;
+            esac
+            [ "$max_w" -gt 0 ] && [ "$max_h" -gt 0 ] || continue
+            # Less than 60% of the screen in either direction = a panel.
+            if [ "$((w * 100))" -lt "$((max_w * 60))" ] ||
+                [ "$((h * 100))" -lt "$((max_h * 60))" ]; then
+                is_panel=1
             fi
-            already_above "$id" && continue
-            if wmctrl -i -r "$id" -b add,above >/dev/null 2>&1; then
-                log "pinned $id ($rest) above other windows"
+        fi
+        idx="$(stack_index "$id")"
+        if [ "$is_panel" -eq 1 ]; then
+            # Re-arm the EWMH state too: a window manager that dropped the
+            # panel out of the "above" set covers it again on the next raise.
+            if ! already_above "$id"; then
+                if wmctrl -i -r "$id" -b add,above >/dev/null 2>&1; then
+                    log "pinned $id ($rest) above other windows"
+                fi
             fi
-        done
+            [ "$idx" -gt "$top_panel_idx" ] || continue
+            top_panel_idx="$idx"
+            top_panel_id="$id"
+        else
+            [ "$idx" -gt "$top_main_idx" ] || continue
+            top_main_idx="$idx"
+        fi
+    done <<EOF
+$wins
+EOF
+
+    # A main window above the panel is exactly the annotation-mode failure:
+    # the toolbar is still mapped and still declares ABOVE, yet every click in
+    # its area reaches the whiteboard.  Compare the stacking positions, not
+    # the window states.
+    [ -n "$top_panel_id" ] || return 0
+    if [ "$top_main_idx" -gt "$top_panel_idx" ]; then
+        raise_panel "$top_panel_id" || true
+        # The restack has to keep happening (the window manager raises the
+        # whiteboard again on its own), but say so only when the cover starts,
+        # not once per second for the rest of the lesson.
+        if [ "$covered_panel" != "$top_panel_id" ]; then
+            log "raised $top_panel_id over Seewo main window (stack $top_main_idx > $top_panel_idx)"
+            covered_panel="$top_panel_id"
+        fi
+    else
+        covered_panel=""
+    fi
 }
 
 log "watching for Seewo floating panels on ${DISPLAY:-unset}"
-while sleep 2; do
+while sleep 1; do
     if ! xrandr --query >/dev/null 2>&1; then
         log "display went away; exiting"
         exit 0

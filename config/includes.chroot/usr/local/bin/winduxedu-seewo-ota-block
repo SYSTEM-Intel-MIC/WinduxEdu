@@ -1,0 +1,48 @@
+#!/bin/sh
+# Keep 希沃白板 from ever reaching its own update service.
+#
+# The vendor components are already disarmed at build time (updater autostart,
+# updater units, Electron's app-update.yml), but EasiNote5 additionally carries
+# an HTTP check independent of all of them, against
+#   https://ota-gateway.seewo.com/api/v1/update
+# (captured in the field monitoring report).  While that host answers, the
+# vendor can return {"hasUpdate":true} for a build nobody reviewed, and an
+# in-place upgrade would replace a pinned, tested image.  Neutralising the host
+# closes the path for good: 127.0.0.1 refuses the connection immediately, so
+# the check gives up without delaying startup.
+#
+# Only that one host is dropped.  enweb3.seewo.com carries login and course
+# content -- blocking it too would trade an update risk for a dead application.
+#
+# This runs at boot rather than at build time because live-build owns
+# /etc/hosts: lb_chroot_hosts bind-mounts the builder's copy into the chroot
+# and lb_binary reinstalls that copy over the finished tree, so no build-time
+# edit survives into the image.  See winduxedu-seewo-ota-block.service.
+set -u
+
+HOSTS=/etc/hosts
+
+# Already armed -- by an earlier boot of this unit, or by an admin.  A name the
+# admin deliberately mapped somewhere else is left alone.
+grep -qE '^[^#]*[[:space:]]ota-gateway\.seewo\.com([[:space:]]|$)' "$HOSTS" 2>/dev/null &&
+    exit 0
+
+if [ ! -e "$HOSTS" ]; then
+    printf '127.0.0.1\tlocalhost\n::1\tip6-localhost ip6-loopback\n' >"$HOSTS" || {
+        echo "seewo-ota-block: cannot create $HOSTS" >&2
+        exit 1
+    }
+fi
+
+printf '127.0.0.1\tota-gateway.seewo.com\n' >>"$HOSTS" || {
+    echo "seewo-ota-block: cannot extend $HOSTS" >&2
+    exit 1
+}
+
+grep -qE '^[^#]*[[:space:]]ota-gateway\.seewo\.com([[:space:]]|$)' "$HOSTS" || {
+    echo "seewo-ota-block: the OTA endpoint is still resolvable" >&2
+    exit 1
+}
+
+echo "seewo-ota-block: ota-gateway.seewo.com -> 127.0.0.1"
+exit 0
