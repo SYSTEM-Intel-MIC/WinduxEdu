@@ -116,7 +116,7 @@ apply_once() {
     matrix="$(read_matrix)"
 
     applied=0
-    while IFS='	' read -r id name; do
+    while IFS="$(printf '\t')" read -r id name; do
         [ -n "$id" ] || continue
         xinput --enable "$id" >/dev/null 2>&1 || true
         if [ "$matrix" != "$IDENTITY" ]; then
