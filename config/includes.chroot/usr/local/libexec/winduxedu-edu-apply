@@ -108,24 +108,23 @@ remove_autostart() {
 # unconditionally: it is a vendor network-quirk unit, not a startup decision.
 apply_seewo() {
     if [ "$value" = 1 ]; then
-        unmask_unit com.cvte.maxhub.alfred.service
-        if command -v systemctl >/dev/null 2>&1; then
-            systemctl enable com.cvte.maxhub.alfred.service >/dev/null 2>&1 || true
-        fi
         # Required: hook 1550 guarantees this menu entry is present and
         # non-empty, so a miss here is a broken image, not an optional extra.
         restore_autostart com.seewo.terminalmanager.desktop required || return 1
         restore_autostart com.cvte.maxhub.alfred.desktop
     else
-        mask_unit com.cvte.maxhub.alfred.service
         remove_autostart com.seewo.terminalmanager.desktop
         remove_autostart com.cvte.maxhub.alfred.desktop
     fi
-    # com.seewo.terminalmanager.service is *not* part of this switch: it runs
-    # hugo_launcher, the backend the 希沃管家 window talks to.  Masking it made
-    # the window open and immediately fail with
-    # "Cannot read property 'data' of undefined", so it stays enabled and this
-    # key only decides whether the window itself is reopened at login.
+    # Neither vendor backend is part of this switch:
+    # com.seewo.terminalmanager.service runs hugo_launcher, the backend the
+    # 希沃管家 window talks to, and com.cvte.maxhub.alfred.service is 希沃白板's
+    # own daemon (EasiNote5's postinst installs /opt/cvte-alfred/alfred and
+    # enables the unit).  Masking the latter -- the old behaviour -- left the
+    # whiteboard with no daemon at all (field report "希沃白板的守护进程没起来"),
+    # and masking the former produced "Cannot read property 'data' of
+    # undefined".  Both stay enabled; this key only decides whether the
+    # windows themselves are reopened at login.
 }
 
 # The third-party sidebar and its UDI dependency are internet-sourced,

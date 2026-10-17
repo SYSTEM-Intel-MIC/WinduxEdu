@@ -238,7 +238,38 @@ mask_unit() {
 mkdir -p /etc/systemd/system/multi-user.target.wants
 ln -sfn /usr/lib/systemd/system/com.seewo.terminalmanager.service \
     /etc/systemd/system/multi-user.target.wants/com.seewo.terminalmanager.service
-mask_unit com.cvte.maxhub.alfred.service
+# 希沃白板's own daemon is the second always-on backend, and it is the one
+# vendor unit that does not live in /usr/lib: EasiNote5's postinst copies
+# com.cvte.maxhub.alfred.service into /etc/systemd/system and then runs
+# `systemctl enable`/`start` on it (it also installs /opt/cvte-alfred/alfred,
+# a D-Bus service on com.cvte.maxhub.alfred).  Every WinduxEdu mask is a
+# /etc/systemd/system symlink to /dev/null, so masking it in place replaced the
+# unit itself, and unmasking it (apply_seewo, 希沃管家开机自启) only removed the
+# link -- 希沃白板 then had no daemon at all, which is the field report
+# "希沃白板的守护进程没起来".  Move the vendor file to /usr/lib, the same layout
+# every other collected unit uses, keep it enabled, and leave the unit itself
+# out of every later mask pass.
+if [ -f /etc/systemd/system/com.cvte.maxhub.alfred.service ]; then
+    install -Dm0644 /etc/systemd/system/com.cvte.maxhub.alfred.service \
+        /usr/lib/systemd/system/com.cvte.maxhub.alfred.service
+    rm -f /etc/systemd/system/com.cvte.maxhub.alfred.service
+elif [ -f /opt/apps/com.seewo.easinote5/files/alfred/etc/systemd/system/com.cvte.maxhub.alfred.service ]; then
+    # Belt and braces: the postinst's own `sudo cp` is what normally lands the
+    # file in /etc, and the vendor deb always ships this copy.
+    install -Dm0644 \
+        /opt/apps/com.seewo.easinote5/files/alfred/etc/systemd/system/com.cvte.maxhub.alfred.service \
+        /usr/lib/systemd/system/com.cvte.maxhub.alfred.service
+fi
+[ -f /usr/lib/systemd/system/com.cvte.maxhub.alfred.service ] || {
+    echo "the Seewo whiteboard daemon unit (com.cvte.maxhub.alfred.service) is missing" >&2
+    exit 1
+}
+mkdir -p /etc/systemd/system/default.target.wants
+# The postinst's own `systemctl enable` put this link in place pointing at the
+# file that masking replaced, so overwrite it (ln -sfn) with the relocated unit.
+ln -sfn /usr/lib/systemd/system/com.cvte.maxhub.alfred.service \
+    /etc/systemd/system/default.target.wants/com.cvte.maxhub.alfred.service
+echo "Seewo whiteboard daemon (com.cvte.maxhub.alfred.service) enabled"
 mask_unit disable-seewo-network-card.service
 
 # 希沃侧边栏 (EasiSideBar) and its UDI hotspot dependency are third-party
@@ -366,8 +397,19 @@ if [ ! -s /usr/share/applications/com.seewo.terminalmanager.desktop ]; then
     echo "Seewo Terminal Manager menu entry is missing or empty" >&2
     exit 1
 fi
-for masked in com.cvte.maxhub.alfred.service \
-              disable-seewo-network-card.service \
+# 希沃白板's daemon is the deliberate exception here: it must be enabled, not
+# masked (the relocation and activation link are set up in the 希沃管家 block
+# above).  A /dev/null symlink at this path means the unit file itself was
+# replaced again, which is the state that left the whiteboard with no daemon.
+if [ -L /etc/systemd/system/com.cvte.maxhub.alfred.service ]; then
+    echo "the Seewo whiteboard daemon unit is masked again" >&2
+    exit 1
+fi
+if [ ! -e /etc/systemd/system/default.target.wants/com.cvte.maxhub.alfred.service ]; then
+    echo "the Seewo whiteboard daemon unit has no activation link" >&2
+    exit 1
+fi
+for masked in disable-seewo-network-card.service \
               com.ifpdos.udi.hotspot.service; do
     [ -L "/etc/systemd/system/$masked" ] || {
         echo "vendor unit is not masked: $masked" >&2
@@ -499,19 +541,38 @@ winduxedu_publish_icon() {
         ;;
     esac
 
+    # What to look for by name, most specific first.  An absolute Icon= that
+    # points at a file the package never ships is common in these vendor debs
+    # -- 钉钉's record does exactly that (its published icon came out as a
+    # plugin's UI art, see below) -- and even then the basename is the best
+    # available name for the real asset, so it leads the search instead of
+    # being discarded with the broken path.  The package id and its last dotted
+    # component cover an entry that carries no usable name at all.
+    pi_names=""
+    for pi_cand in "$pi_token" "$(basename "$pi_token")" "$pi_key" "${pi_key##*.}"; do
+        [ -n "$pi_cand" ] || continue
+        pi_cand="${pi_cand%.png}"
+        pi_cand="${pi_cand%.svg}"
+        pi_cand="${pi_cand%.ico}"
+        case "$pi_cand" in
+        */* | . | .. | "") continue ;;
+        esac
+        case " $pi_names " in
+        *" $pi_cand "*) continue ;;
+        esac
+        pi_names="$pi_names $pi_cand"
+    done
+
     if [ -z "$pi_src" ]; then
-        for pi_try in "$pi_token" "$pi_key"; do
-            [ -n "$pi_try" ] || continue
-            pi_try="${pi_try%.png}"
-            pi_try="${pi_try%.svg}"
-            case "$pi_try" in
-            */*|"") continue ;;
-            esac
+        for pi_try in $pi_names; do
             # Largest file first: the shell downsamples the source it is
             # given, it cannot sharpen a 16 px asset published as 256 px.
+            # -iname, not -name: the vendor trees mix cases (a DingTalk.png next
+            # to a dingtalk.ico) and an exact-name miss used to fall straight
+            # through to "the largest PNG in the package" below.
             pi_src="$(find /opt/apps /usr/share/icons /usr/share/pixmaps \
                     /usr/local/share/icons -type f \
-                    \( -name "$pi_try.png" -o -name "$pi_try.svg" \) \
+                    \( -iname "$pi_try.png" -o -iname "$pi_try.svg" \) \
                     -printf '%s %p\n' 2>/dev/null | sort -rn | head -n1 \
                 | cut -d' ' -f2-)"
             [ -n "$pi_src" ] && break
@@ -519,9 +580,23 @@ winduxedu_publish_icon() {
     fi
     if [ -z "$pi_src" ] && [ -d "/opt/apps/$pi_key" ]; then
         # Last resort: anything the application itself ships still beats the
-        # blank glyph an unresolvable record renders.
-        pi_src="$(find "/opt/apps/$pi_key" -type f -name '*.png' \
+        # blank glyph an unresolvable record renders -- but in three tiers,
+        # because taking the largest PNG anywhere in the package put a plugin's
+        # UI art on the desktop instead of the logo (钉钉: the 投屏 plugin's
+        # plugins/tblive/data/conf_res/screen_cast_paused.png).  Icon trees
+        # first, then anything outside a plugin tree, and only then the raw
+        # largest image.
+        pi_src="$(find "/opt/apps/$pi_key" -type f -name '*.png' -path '*/icons/*' \
             -printf '%s %p\n' 2>/dev/null | sort -rn | head -n1 | cut -d' ' -f2-)"
+        if [ -z "$pi_src" ]; then
+            pi_src="$(find "/opt/apps/$pi_key" -type f -name '*.png' \
+                ! -path '*/plugins/*' \
+                -printf '%s %p\n' 2>/dev/null | sort -rn | head -n1 | cut -d' ' -f2-)"
+        fi
+        if [ -z "$pi_src" ]; then
+            pi_src="$(find "/opt/apps/$pi_key" -type f -name '*.png' \
+                -printf '%s %p\n' 2>/dev/null | sort -rn | head -n1 | cut -d' ' -f2-)"
+        fi
     fi
     [ -n "$pi_src" ] || return 1
 
@@ -685,6 +760,15 @@ fi
 # level, and print the layout so the build log carries the ground truth.
 echo "DingTalk files layout:"
 find "$DT_FILES" -maxdepth 2 -type d -print | sort | head -n 40
+# 钉钉's desktop record points its Icon= at a file the package does not ship, so
+# winduxedu_publish_icon has to find the real art by name; the previous
+# unrestricted fallback published the 投屏 plugin's UI art instead of the logo.
+# Print the icon-shaped assets the package actually carries, largest first, so a
+# wrong pick is visible in the build log rather than only on the desktop.
+echo "DingTalk icon assets (largest first):"
+find "$DT_FILES" /opt/apps/com.alibabainc.dingtalk/entries \
+    -type f \( -iname 'dingtalk*' -o -path '*/icons/*' \) \
+    -printf '%s %p\n' 2>/dev/null | sort -rn | head -n 20
 find "$DT_FILES" \( \
         -name 'libm.so.6' -o \
         -name 'libstdc++.so.6*' -o \

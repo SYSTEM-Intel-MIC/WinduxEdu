@@ -467,17 +467,29 @@ grep -qx 'editorWindowMode = true' \
     exit 1
 }
 
-# (3) Typing Chinese must go back to English on a plain Shift press.  fcitx5's
-# compiled default only recognises the left shift key, so both keys are
-# configured explicitly (and Deactivate covers the "session started in
-# English" state where AltTrigger deliberately does nothing).
+# (3) A plain Shift press must switch between Chinese and English.  fcitx5's
+# AltTriggerKeys ("Temporarily Toggle Input Method") deliberately does nothing
+# while the input method is inactive -- canAltTrigger() returns false unless the
+# context is active or was switched off by this very key -- and every fresh
+# session starts inactive, so Shift alone could not reach Chinese at all (field
+# report: 中文输入法不可用).  The switch therefore rides on TriggerKeys ("Toggle
+# Input Method"), which flips the state from either side.  fcitx5's compiled
+# default only recognises the left shift key, so both are listed; Control+space
+# stays as the upstream default.
 FCITX_CONF="$FULL_ROOT/etc/skel/.config/fcitx5/config"
+grep -qx 'TriggerKeys=Control+space Shift_L Shift_R' "$FCITX_CONF" || {
+    echo 'fcitx5 Shift does not toggle the input method from either state' >&2
+    exit 1
+}
 grep -qx 'AltTriggerKeys=Shift_L Shift_R' "$FCITX_CONF" || {
     echo 'fcitx5 Shift trigger is not configured for both shift keys' >&2
     exit 1
 }
-grep -qx 'DeactivateKeys=Shift_L Shift_R' "$FCITX_CONF" || {
-    echo 'fcitx5 Shift deactivate trigger is missing' >&2
+# DeactivateKeys used to be bound to Shift as well; deactivate() is a no-op on
+# an inactive input context, so the binding only made the reported failure
+# impossible to recover from with Shift.
+! grep -qx 'DeactivateKeys=Shift_L Shift_R' "$FCITX_CONF" || {
+    echo 'fcitx5 still binds Shift to DeactivateKeys, which cannot re-activate' >&2
     exit 1
 }
 
@@ -910,6 +922,19 @@ grep -qF 'repair_dir "$HOME/Desktop"' "$TIDY_HELPER" || {
     echo 'desktop-tidy no longer sweeps $HOME/Desktop' >&2
     exit 1
 }
+# Opening a Seewo application drops the vendor's own .desktop next to the
+# shortcut the image ships, which is how 希沃白板 ended up with two identically
+# labelled icons on the desktop (希沃白板.desktop and com.seewo.easinote5.desktop).
+# The repair loop has to de-duplicate what it repairs, and it has to be able to
+# tell the human-named record from the package-id copy.
+grep -qF 'dedupe_dir "$HOME/Desktop"' "$TIDY_HELPER" || {
+    echo 'desktop-tidy does not de-duplicate $HOME/Desktop' >&2
+    exit 1
+}
+grep -qF 'is_package_id' "$TIDY_HELPER" || {
+    echo 'desktop-tidy has no model of which record is the vendor copy' >&2
+    exit 1
+}
 
 # (5) The education switches must be observable, and every source the applier
 # restores from must exist: otherwise the page reverts itself two seconds later
@@ -937,10 +962,14 @@ if [ -z "$apply_line" ] || [ -z "$persist_line" ] ||
     exit 1
 fi
 # Every 希沃 package the settings page labels has to be reachable from the
-# uninstall button, otherwise clicking it silently does nothing.
+# uninstall button, otherwise clicking it silently does nothing.  The page also
+# names the sidebar's autostart entry (/etc/xdg/autostart/com.seewo.easisidebar.desktop),
+# and that path is a FILE name, not a package: strip the .desktop suffix before
+# comparing, or a correct helper fails the build over a non-package.
 EDU_UNINSTALL="$WORK/winduxedu-edu-uninstall"
 cat_image_file 'usr/local/libexec/winduxedu-edu-uninstall' "$EDU_UNINSTALL"
-for seewo_pkg in $(grep -oE 'com\.seewo\.[a-z0-9.]+' "$EDU_SETTINGS" | sort -u); do
+for seewo_pkg in $(grep -oE 'com\.seewo\.[a-z0-9.]+' "$EDU_SETTINGS" |
+        sed 's/\.desktop$//' | sort -u); do
     grep -q "$seewo_pkg" "$EDU_UNINSTALL" || {
         echo "seewo package $seewo_pkg is offered by the settings page but missing from the uninstall allow-list" >&2
         exit 1
@@ -992,13 +1021,12 @@ require_path 'usr/share/applications/com.seewo.terminalmanager.desktop'
     echo 'exported Seewo Terminal Manager menu entry is empty' >&2
     exit 1
 }
-# Vendor boot-time activations stay off in a generic Live image: the MAXHUB
-# alfred D-Bus service, the Seewo NIC script and the hotspot unit are masked
-# through /etc/systemd/system (unit files themselves remain dpkg-owned), and
-# the terminal manager's *session* autostart entry is removed.  All three
-# still launch on demand from the menu where the vendor intends them to.
+# Vendor boot-time activations stay off in a generic Live image: the Seewo NIC
+# script and the hotspot unit are masked through /etc/systemd/system (unit
+# files themselves remain dpkg-owned), and the terminal manager's *session*
+# autostart entry is removed.  Both still launch on demand from the menu where
+# the vendor intends them to.
 for masked_unit in \
-    com.cvte.maxhub.alfred.service \
     disable-seewo-network-card.service \
     com.ifpdos.udi.hotspot.service; do
     mask_target="$(readlink "$FULL_ROOT/etc/systemd/system/$masked_unit" 2>/dev/null || true)"
@@ -1007,6 +1035,31 @@ for masked_unit in \
         exit 1
     }
 done
+# 希沃白板's daemon (com.cvte.maxhub.alfred.service, EasiNote5's postinst
+# installs /opt/cvte-alfred/alfred and enables it) is the second deliberate
+# exception: it must be enabled and its unit file must still be readable.  The
+# unit is the one vendor service that arrives in /etc/systemd/system instead of
+# /usr/lib, and the /dev/null mask used to overwrite it, so assert both the
+# relocated unit and the activation link.
+require_path 'usr/lib/systemd/system/com.cvte.maxhub.alfred.service'
+alfred_mask="$(readlink "$FULL_ROOT/etc/systemd/system/com.cvte.maxhub.alfred.service" 2>/dev/null || true)"
+[ "$alfred_mask" != "/dev/null" ] || {
+    echo 'the Seewo whiteboard daemon unit is masked in the final image' >&2
+    exit 1
+}
+# The link target is absolute, so it must be read with readlink: a `-e` test
+# would resolve /usr/lib/... against the *host* building the check, not against
+# $FULL_ROOT, and would report a perfectly good link as missing.
+alfred_wants="$(readlink "$FULL_ROOT/etc/systemd/system/default.target.wants/com.cvte.maxhub.alfred.service" 2>/dev/null || true)"
+[ "$alfred_wants" = "/usr/lib/systemd/system/com.cvte.maxhub.alfred.service" ] || {
+    echo "the Seewo whiteboard daemon unit has no activation link in the final image (got: ${alfred_wants:-absent})" >&2
+    exit 1
+}
+# Enabled and readable is not enough: the unit starts /opt/cvte-alfred/alfred
+# (Type=dbus on com.cvte.maxhub.alfred), and the D-Bus policy that lets it claim
+# that name is a second file the postinst's `sudo cp` is responsible for.
+require_path 'opt/cvte-alfred/alfred'
+require_path 'etc/dbus-1/system.d/com.cvte.maxhub.alfred.conf'
 # 希沃管家 is the deliberate exception and must never be masked again: the
 # SeewoServiceAssistant window reads its data from hugo_launcher, so a masked
 # backend is what produced "Cannot read property 'data' of undefined".  The
@@ -1102,6 +1155,33 @@ for stale in libm.so.6 libstdc++.so.6 libstdc++.so.6.0.25 \
         exit 1
     fi
 done
+
+# 钉钉's desktop icon.  The vendor record points its Icon= at a file the package
+# does not ship, and the resolver's last-resort step used to take "the largest
+# PNG in the package", which published the 投屏 plugin's UI art
+# (plugins/tblive/data/conf_res/screen_cast_paused.png) as the application icon.
+# The published icon must therefore exist and must not be byte-identical to any
+# asset the package keeps under a plugins/ tree.
+DT_ICON_DIR="$FULL_ROOT/usr/local/share/elevende-shell/icons/64x64/apps"
+DT_ICON=""
+for dt_cand in "$DT_ICON_DIR/com.alibabainc.dingtalk.png" \
+    "$DT_ICON_DIR/com.alibabainc.dingtalk.svg"; do
+    if [ -s "$dt_cand" ]; then
+        DT_ICON="$dt_cand"
+        break
+    fi
+done
+[ -n "$DT_ICON" ] || {
+    echo 'the DingTalk desktop icon was not published into the shell icon namespace' >&2
+    exit 1
+}
+dt_icon_sha="$(sha256sum "$DT_ICON" | cut -d' ' -f1)"
+if find "$FULL_ROOT/opt/apps/com.alibabainc.dingtalk" -path '*/plugins/*' \
+        -type f -name '*.png' -exec sha256sum {} + 2>/dev/null |
+        grep -q "^${dt_icon_sha} "; then
+    echo 'the DingTalk desktop icon is a plugin asset, not the application icon' >&2
+    exit 1
+fi
 
 # ONLYOFFICE (task): it must be the system-wide default application/pdf
 # handler, and must advertise the MIME type itself so the association sticks.

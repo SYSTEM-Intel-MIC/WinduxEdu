@@ -2,10 +2,14 @@
 # WinduxEdu desktop shortcut repair.
 #
 # Opening one of the Seewo applications writes a .desktop record of its own,
-# and the record it writes has no Name/Icon/Exec: the shell renders that as a
-# blank icon the user cannot click (field report item 7).  Sweep the two places
-# such a record can appear, restore it from the packaged entry when the id is
-# still known, and drop it when nothing usable is left.
+# and the record it writes often has no Name/Icon/Exec: the shell renders that
+# as a blank icon the user cannot click (field report item 7).  The same launch
+# also drops a record *next to* the shortcut the image already ships, so the
+# desktop ends up with two identically labelled icons for one application
+# (field report: 希沃白板启动时会在桌面又放一个快捷方式导致多个快捷方式).  Sweep
+# the two places such a record can appear, restore it from the packaged entry
+# when the id is still known, drop it when nothing usable is left, and keep
+# exactly one record per launcher.
 #
 # A record can also be complete and still draw nothing: an Icon= the shell
 # cannot open -- no value at all, a path to a file that is not there, or a
@@ -167,6 +171,100 @@ fix_icon() {
     fi
 }
 
+# A package id (com.seewo.easinote5) is what the vendor drops; the shortcut the
+# image ships carries a human name (希沃白板).  Nothing else tells the two apart,
+# and both are legitimate on their own.
+is_package_id() {
+    case "$1" in
+    com.* | org.* | io.* | net.* | de.* | fr.* | cn.*) return 0 ;;
+    esac
+    return 1
+}
+
+# entry_exec_token <file>: first word of the [Desktop Entry] Exec= line, i.e.
+# the program the record starts without its arguments and field codes.
+entry_exec_token() {
+    sed -n 's/^Exec=//p' "$1" | head -n 1 | awk '{ print $1 }'
+}
+
+# entry_name <file>: the untranslated Name= of [Desktop Entry].
+entry_name() {
+    sed -n 's/^Name=//p' "$1" | head -n 1
+}
+
+# claimed <blob> <key>: true when <key> is already one of the newline-separated
+# values in <blob>.  Entries are compared whole (the value must be delimited by a
+# newline or the end of the blob), so name:视频展台 never matches name:视频展台1.
+claimed() {
+    case "$1" in
+    *"
+$2
+"*) return 0 ;;
+    *"
+$2") return 0 ;;
+    esac
+    return 1
+}
+
+# dedupe_rank <file>: which of two records that point at the same launcher wins.
+# 1 is a shortcut the image itself ships (/etc/skel/Desktop carries the same file
+# name), 2 is any other hand-named record, 3 is the package-id copy the vendor
+# drops next to it.  The lower rank is processed first, so the record the image
+# intended both keeps its place and owns the Name=/Exec= claims.
+dedupe_rank() {
+    dedup_r_id="$(basename "$1" .desktop)"
+    if [ -f "/etc/skel/Desktop/$dedup_r_id.desktop" ]; then
+        echo 1
+    elif is_package_id "$dedup_r_id"; then
+        echo 3
+    else
+        echo 2
+    fi
+}
+
+# Keep exactly one record per launcher.  Opening a Seewo application copies the
+# vendor's own .desktop next to the shortcut the image ships, and the copy
+# carries the same Name= and Exec= as that shortcut, so the desktop shows two
+# identically labelled icons (field report: 希沃白板启动时会在桌面又放一个快捷方式
+# 导致多个快捷方式).  The repair pass above has just given every record a usable
+# Name=/Exec=, so group by those two values and drop the copy.  Records with no
+# Name= and no Exec= cannot be grouped and are left where they are -- repair_dir()
+# already removed those.
+dedupe_dir() {
+    dd_dir="$1"
+    [ -d "$dd_dir" ] || return 0
+    dd_claims=""
+    dd_rank=0
+    while [ "$dd_rank" -lt 3 ]; do
+        dd_rank=$((dd_rank + 1))
+        for dd_entry in "$dd_dir"/*.desktop; do
+            [ -f "$dd_entry" ] || continue
+            [ "$(dedupe_rank "$dd_entry")" -eq "$dd_rank" ] || continue
+            dd_exec="$(entry_exec_token "$dd_entry")"
+            dd_name="$(entry_name "$dd_entry")"
+            dd_key=""
+            if [ -n "$dd_exec" ] && claimed "$dd_claims" "exec:$dd_exec"; then
+                dd_key="exec:$dd_exec"
+            elif [ -n "$dd_name" ] && claimed "$dd_claims" "name:$dd_name"; then
+                dd_key="name:$dd_name"
+            fi
+            if [ -n "$dd_key" ]; then
+                log "removing duplicate record $dd_entry (${dd_key#*:} is already on the desktop)"
+                rm -f "$dd_entry"
+                continue
+            fi
+            if [ -n "$dd_exec" ]; then
+                dd_claims="$dd_claims
+exec:$dd_exec"
+            fi
+            if [ -n "$dd_name" ]; then
+                dd_claims="$dd_claims
+name:$dd_name"
+            fi
+        done
+    done
+}
+
 while :; do
     # Repair every directory the shell might be drawing from.  ElevenDE reads
     # $HOME/Desktop directly while xdg-user-dir DESKTOP answers ~/桌面 in a
@@ -174,10 +272,16 @@ while :; do
     # actually renders untouched.
     repair_dir "$HOME/Desktop"
     repair_dir "$HOME/桌面"
+    user_desktop=""
     if command -v xdg-user-dir >/dev/null 2>&1; then
         user_desktop="$(xdg-user-dir DESKTOP 2>/dev/null)"
         [ -n "$user_desktop" ] && repair_dir "$user_desktop"
     fi
     repair_dir "$HOME/.local/share/applications"
+    # Only the directories the shell draws icons from are de-duplicated: the
+    # application menu may legitimately hold two entries with one display name.
+    dedupe_dir "$HOME/Desktop"
+    dedupe_dir "$HOME/桌面"
+    [ -n "$user_desktop" ] && dedupe_dir "$user_desktop"
     sleep "$POLL"
 done

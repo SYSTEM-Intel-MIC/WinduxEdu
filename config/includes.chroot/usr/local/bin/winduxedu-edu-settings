@@ -112,6 +112,34 @@ write_user_key() {
     mv -f "$tmp" "$USER_CONF"
 }
 
+# 教育版设置 → 启用桌面侧边栏 used to write /etc/xdg/autostart and nothing
+# else, so flipping the switch changed nothing the user could see until the
+# next login.  Start the sidebar in the running session too.  This script runs
+# inside the user's own session (the Settings page starts it), so it already
+# carries the right DISPLAY and XAUTHORITY -- the root-side applier deliberately
+# has no access to them.
+start_sidebar_now() {
+    sidebar_entry=/etc/xdg/autostart/com.seewo.easisidebar.desktop
+    [ -s "$sidebar_entry" ] || return 0
+    sidebar_prog="$(sed -n 's/^Exec=//p' "$sidebar_entry" |
+        head -n 1 | awk '{ print $1 }')"
+    [ -n "$sidebar_prog" ] || return 0
+    [ -x "$sidebar_prog" ] || return 0
+    if command -v pgrep >/dev/null 2>&1; then
+        # Already running: the switch must not start a second copy.
+        if pgrep -f "$sidebar_prog" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    # Detach it so it outlives this helper (and the Settings page's QProcess).
+    if command -v setsid >/dev/null 2>&1; then
+        setsid "$sidebar_prog" >/dev/null 2>&1 &
+    else
+        "$sidebar_prog" >/dev/null 2>&1 &
+    fi
+    echo "winduxedu-edu-settings: started the desktop sidebar"
+}
+
 seewo_label() {
     case "$1" in
         com.seewo.easinote5) echo "希沃白板5" ;;
@@ -165,6 +193,11 @@ case "$cmd" in
             if [ "$rc" -ne 0 ]; then
                 echo "winduxedu-edu-settings: cannot apply $key=$value (pkexec exit $rc)" >&2
                 exit "$rc"
+            fi
+            # Adding the autostart entry alone left the switch looking dead, so
+            # 启用桌面侧边栏 also starts the sidebar right here and now.
+            if [ "$key" = sidebar-autostart ] && [ "$value" = 1 ]; then
+                start_sidebar_now
             fi
         fi
         ;;

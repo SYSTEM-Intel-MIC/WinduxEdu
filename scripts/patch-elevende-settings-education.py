@@ -19,9 +19,10 @@ from a copy held by the UI:
   * 屏幕键盘                screen-keyboard        per user, default off
   * 希沃管家开机自启         seewo-autostart        system,    default off
                             (hint: 建议希沃一体机开启，其它设备关闭)
-  * 希沃侧边栏开机自启       sidebar-autostart      system,    default off,
-                            switches the sidebar user unit *and* its UDI
-                            hotspot dependency together
+  * 启用桌面侧边栏（希沃官方侧边栏）  sidebar-autostart  system, default off,
+                            starts the sidebar in the running session *and*
+                            registers it for login, together with its UDI
+                            hotspot dependency
   * 希沃类软件一键卸载        list-seewo / uninstall-seewo, one row per package
 
 Every key is re-read on a two second timer while the page is visible, so a
@@ -363,11 +364,12 @@ QWidget *buildEduPage()
                                     state)));
 
     v->addWidget(xCard(QStringLiteral("第三方侧边栏"),
-                       eduToggleRow(QStringLiteral("希沃侧边栏开机自启"),
-                                    QStringLiteral("侧边栏与其依赖的 UDI 热点服务均为"
+                       eduToggleRow(QStringLiteral("启用桌面侧边栏（希沃官方侧边栏）"),
+                                    QStringLiteral("打开后立即启动希沃官方桌面侧边栏，并登记为"
+                                                   "登录自启动。侧边栏与其依赖的 UDI 热点服务均为"
                                                    "第三方互联网软件、非开源，与 WinduxEdu / "
                                                    "SYSTEM-Intel-MIC 无关；默认关闭，"
-                                                   "打开时一并启用依赖服务。UDI 服务立即启用，侧边栏本体在下次登录时自动启动。"),
+                                                   "打开时一并启用依赖服务。"),
                                     QStringLiteral("sidebar-autostart"),
                                     false,
                                     state)));
